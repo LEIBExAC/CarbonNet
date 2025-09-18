@@ -1,12 +1,9 @@
-const mongoose = require("mongoose")
-const {MONGO_URL} = require("../utility/keys")
+const mongoose = require("mongoose");
+const dotenv = require("dotenv");
 
-mongoose.connect(MONGO_URL)
-mongoose.connection.on("connected", () => {
-    console.log("Cloud Database MongoDb Connected to Server......")
-})
-mongoose.connection.on("error", () => {
-    console.log("Connection with Database failed ......")
-})
+dotenv.config();
 
-module.exports = mongoose;
+module.exports = mongoose
+  .connect(process.env.MONGO_URI)
+  .then(() => console.log("MongoDB connected"))
+  .catch((err) => console.log("Error connecting to MongoDB:", err));
