@@ -1,213 +1,381 @@
-const USER = require("../models/user");
-const bcrypt = require("bcrypt");
-const { JWT_SECRET } = require("../utility/keys");
-const generateTokenAndSetCookie = require("../utility/generateTokenAndSetCookie");
+const User = require("../models/user");
+const crypto = require("crypto");
 const {
-  sendVerificationConfrmEmail,
-  sendPasswordResetEmail,
+  generateToken,
+  generateRefreshToken,
+} = require("../utility/generateToken");
+const {
+  sendEmail,
   sendVerificationEmail,
-} = require("../config/emailsender");
-const jwt = require("jsonwebtoken");
+  sendWelcomeEmail,
+  sendPasswordResetEmail,
+} = require("../utility/sendEmail");
+const { asyncHandler } = require("../middleware/errorHandler");
 
-// Signup Controller
-exports.signup = async (req, res) => {
-  try {
-    const { name, email, password, role } = req.body;
-    if (!name || !email || !password) {
-      return res.status(400).json({ message: "Please Enter All Fields" });
-    }
+/**
+ * @desc    Register a new user
+ * @route   POST /auth/register
+ * @access  Public
+ * @note    I have for now allowed the role of user to be set from frontend, but we can later change it to be set in profile section, upgrading from current regular one to other roles based on verification. So do not take input from user for the role, later to be upgraded.
+ */
+exports.register = asyncHandler(async (req, res) => {
+  const {
+    name,
+    email,
+    password,
+    userType,
+    institutionId,
+    department,
+    enrollmentId,
+  } = req.body;
 
-    const existingUser = await USER.findOne({ email });
-    if (existingUser) {
-      if (existingUser.emailVerified) {
-        return res
-          .status(400)
-          .json({ message: "User already exists with this email" });
-      } else {
-        const newVerificationToken = Math.floor(
-          100000 + Math.random() * 900000
-        ).toString();
-        existingUser.verificationToken = newVerificationToken;
-        existingUser.name = name;
-        existingUser.password = await bcrypt.hash(password, 10);
-        existingUser.verificationTokenExpiresAt = Date.now() + 5 * 60 * 1000;
-        await existingUser.save();
-        sendVerificationEmail(email, newVerificationToken);
-        generateTokenAndSetCookie(res, existingUser._id);
-        return res
-          .status(200)
-          .json({ message: "Verification email is resent" });
-      }
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const verificationToken = Math.floor(
-      100000 + Math.random() * 900000
-    ).toString();
-
-    const user = new USER({
-      name,
-      email,
-      password: hashedPassword,
-      role,
-      verificationToken,
-      verificationTokenExpiresAt: Date.now() + 5 * 60 * 1000,
+  const userExists = await User.findOne({ email });
+  if (userExists) {
+    return res.status(400).json({
+      success: false,
+      message: "User already exists with this email",
     });
-
-    const savedUser = await user.save();
-    sendVerificationEmail(email, verificationToken);
-    generateTokenAndSetCookie(res, savedUser._id);
-
-    res.status(201).json({ message: "Signup successful", savedUser });
-  } catch (error) {
-    console.log("signup error : " + error);
-    return res.status(500).json({ message: "Server Error" });
   }
-};
 
-// Verify OTP Controller
-exports.verifyOtp = async (req, res) => {
+  const verificationToken = crypto.randomBytes(32).toString("hex");
+  const verificationTokenExpiresAt = Date.now() + 10 * 60 * 1000;
+
+  const user = await User.create({
+    name,
+    email,
+    password,
+    userType: userType || "regularUser",
+    institutionId,
+    department,
+    enrollmentId,
+    verificationToken,
+    verificationTokenExpiresAt,
+    status: "pending",
+  });
+
   try {
-    const token = req.cookies.token;
-    if (!token) {
-      return res
-        .status(401)
-        .json({ message: "Unauthorized. No token provided." });
-    }
+    await sendVerificationEmail(user.email, user.name, verificationToken);
 
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const userId = decoded.userId;
-
-    const user = await USER.findById(userId);
-    if (!user) {
-      return res.status(404).json({ message: "User not found." });
-    }
-
-    const { otp } = req.body;
-    if (!otp) {
-      return res.status(400).json({ message: "OTP is required." });
-    }
-
-    if (
-      user.verificationToken !== otp ||
-      !user.verificationTokenExpiresAt ||
-      user.verificationTokenExpiresAt < Date.now()
-    ) {
-      return res.status(400).json({ message: "Invalid or expired OTP." });
-    }
-
-    user.isVerified = true;
-    user.verificationToken = undefined;
-    user.verificationTokenExpiresAt = undefined;
-
-    await user.save();
-    sendVerificationConfrmEmail(user.email, user);
-    res.status(200).json({ message: "Account verified successfully." });
+    res.status(201).json({
+      success: true,
+      message:
+        "Registration successful. Please check your email to verify your account.",
+      data: {
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+        },
+      },
+    });
   } catch (error) {
-    console.error("Verification error:", error);
-    res.status(500).json({ message: "Server error." });
+    // Deleting user if email send fails, to avoid unverified accounts and let user retry
+    await User.findByIdAndDelete(user._id);
+
+    return res.status(500).json({
+      success: false,
+      message: "Email could not be sent. Please try again.",
+    });
   }
-};
+});
 
-// Signin Controller
-exports.signin = async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res
-        .status(400)
-        .json({ message: "Email and password are required" });
-    }
+/**
+ *  @desc    Verify email
+ *  @route   GET /auth/verify-email/:token
+ *  @access  Public
+ */
+exports.verifyEmail = asyncHandler(async (req, res) => {
+  const { token } = req.params;
 
-    const user = await USER.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ message: "User does not exist" });
-    }
-    const isMatch = await bcrypt.compare(password, user.password);
+  const user = await User.findOne({
+    verificationToken: token,
+    verificationTokenExpiresAt: { $gt: Date.now() },
+  });
 
-    if (!isMatch) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-    generateTokenAndSetCookie(res, user._id);
-    res.status(200).json({ message: "Signin successful", user });
-  } catch (error) {
-    console.error("Signin error:", error);
-    res.status(500).json({ message: "Server error" });
-  }
-};
-
-// Request Reset OTP Controller
-exports.requestResetOtp = async (req, res) => {
-  const { email } = req.body;
-  const user = await USER.findOne({ email });
   if (!user) {
-    return res.status(404).json({ message: "User not found" });
+    return res.status(400).json({
+      success: false,
+      message: "Invalid or expired verification token",
+    });
   }
 
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  user.resetPasswordToken = otp;
-  user.resetPasswordExpiresAt = Date.now() + 10 * 60 * 1000;
-  sendPasswordResetEmail(user, otp, email);
+  user.emailVerified = true;
+  user.status = "active";
+  user.verificationToken = undefined;
+  user.verificationTokenExpiresAt = undefined;
   await user.save();
 
-  res.status(200).json({ message: "OTP sent to email." });
-};
+  await sendWelcomeEmail(user.email, user.name);
 
-// Verify Reset OTP Controller
-exports.verifyResetOtp = async (req, res) => {
-  const { email, otp, newPassword } = req.body;
+  res.status(200).json({
+    success: true,
+    message: "Email verified successfully. You can now login.",
+  });
+});
 
-  const user = await USER.findOne({ email });
-  if (!user) return res.status(404).json({ message: "User not found" });
+/**
+ * @desc    Login user
+ * @route   POST /auth/login
+ * @access  Public
+ */
+exports.login = asyncHandler(async (req, res) => {
+  const { email, password } = req.body;
 
-  if (
-    user.resetPasswordToken !== otp ||
-    !user.resetPasswordExpiresAt ||
-    user.resetPasswordExpiresAt < Date.now()
-  ) {
-    return res.status(400).json({ message: "Invalid or expired OTP" });
+  const user = await User.findOne({ email }).select("+password");
+
+  if (!user) {
+    return res.status(401).json({
+      success: false,
+      message: "Invalid credentials",
+    });
   }
 
-  const salt = await bcrypt.genSalt(10);
-  user.password = await bcrypt.hash(newPassword, salt);
+  if (user.isLocked) {
+    const lockTimeRemaining = Math.ceil(
+      (user.lockUntil - Date.now()) / (1000 * 60)
+    );
+    return res.status(423).json({
+      success: false,
+      message: `Account locked. Try again in ${lockTimeRemaining} minutes.`,
+    });
+  }
 
+  const isPasswordMatch = await user.comparePassword(password);
+
+  if (!isPasswordMatch) {
+    await user.incLoginAttempts();
+    return res.status(401).json({
+      success: false,
+      message: "Invalid credentials",
+    });
+  }
+
+  if (!user.emailVerified) {
+    return res.status(403).json({
+      success: false,
+      message: "Please verify your email before logging in",
+    });
+  }
+
+  if (user.status !== "active") {
+    return res.status(403).json({
+      success: false,
+      message: "Your account is not active. Please contact admin.",
+    });
+  }
+
+  if (user.loginAttempts > 0) {
+    await user.resetLoginAttempts();
+  }
+
+  await user.updateLastLogin();
+
+  const token = generateToken(user._id);
+  const refreshToken = generateRefreshToken(user._id);
+
+  res.cookie("token", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Login successful",
+    data: {
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        userType: user.userType,
+        institutionId: user.institutionId,
+      },
+      token,
+      refreshToken,
+    },
+  });
+});
+
+/**
+ * @desc    Logout user
+ * @route   POST /auth/logout
+ * @access  Private
+ */
+exports.logout = asyncHandler(async (req, res) => {
+  res.cookie("token", "", {
+    httpOnly: true,
+    expires: new Date(0),
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Logged out successfully",
+  });
+});
+
+/**
+ * @desc    Get current logged in user
+ * @route   GET /auth/me
+ * @access  Private
+ */
+exports.getMe = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user.id).populate(
+    "institutionId",
+    "name code"
+  );
+
+  res.status(200).json({
+    success: true,
+    data: { user },
+  });
+});
+
+/**
+ * @desc    Forgot password
+ * @route   POST /auth/forgot-password
+ * @access  Public
+ */
+exports.forgotPassword = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  const user = await User.findOne({ email });
+
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: "No user found with that email",
+    });
+  }
+
+  const resetToken = crypto.randomBytes(32).toString("hex");
+  user.resetPasswordToken = resetToken;
+  user.resetPasswordExpiresAt = Date.now() + 10 * 60 * 1000;
+  await user.save();
+
+  try {
+    await sendPasswordResetEmail(user.email, user.name, resetToken);
+
+    res.status(200).json({
+      success: true,
+      message: "Password reset email sent",
+    });
+  } catch (error) {
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpiresAt = undefined;
+    await user.save();
+
+    return res.status(500).json({
+      success: false,
+      message: "Email could not be sent",
+    });
+  }
+});
+
+/**
+ * @desc    Reset password
+ * @route   PUT /auth/reset-password/:token
+ * @access  Public
+ */
+exports.resetPassword = asyncHandler(async (req, res) => {
+  const { token } = req.params;
+  const { password } = req.body;
+
+  const user = await User.findOne({
+    resetPasswordToken: token,
+    resetPasswordExpiresAt: { $gt: Date.now() },
+  });
+
+  if (!user) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid or expired reset token",
+    });
+  }
+
+  user.password = password;
   user.resetPasswordToken = undefined;
   user.resetPasswordExpiresAt = undefined;
+  user.passwordChangedAt = Date.now();
   await user.save();
 
-  res.status(200).json({ message: "Password reset successful" });
-};
+  res.status(200).json({
+    success: true,
+    message:
+      "Password reset successful. You can now login with your new password.",
+  });
+});
 
-// Change Password Controller
-exports.changePassword = async (req, res) => {
+/**
+ * @desc    Change password
+ * @route   PUT /auth/change-password
+ * @access  Private
+ */
+exports.changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  const user = await User.findById(req.user.id).select("+password");
+
+  const isMatch = await user.comparePassword(currentPassword);
+  if (!isMatch) {
+    return res.status(401).json({
+      success: false,
+      message: "Current password is incorrect",
+    });
+  }
+
+  user.password = newPassword;
+  user.passwordChangedAt = Date.now();
+  await user.save();
+
+  res.status(200).json({
+    success: true,
+    message: "Password changed successfully",
+  });
+});
+
+/**
+ * @desc    Refresh token
+ * @route   POST /auth/refresh-token
+ * @access  Public
+ */
+exports.refreshToken = asyncHandler(async (req, res) => {
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    return res.status(400).json({
+      success: false,
+      message: "Refresh token required",
+    });
+  }
+
   try {
-    const { password, newPassword } = req.body;
-
-    if (!password || !newPassword) {
-      return res
-        .status(400)
-        .json({ message: "Both old and new passwords are required." });
-    }
-
-    const userId = req.userId;
-    const user = await USER.findById(userId);
+    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    const user = await User.findById(decoded.id);
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(401).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(401).json({ message: "Old password is incorrect" });
-    }
+    const newToken = generateToken(user._id);
+    const newRefreshToken = generateRefreshToken(user._id);
 
-    const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(newPassword, salt);
-    await user.save();
-
-    res.status(200).json({ message: "Password changed successfully" });
+    res.status(200).json({
+      success: true,
+      data: {
+        token: newToken,
+        refreshToken: newRefreshToken,
+      },
+    });
   } catch (error) {
-    console.error("Change password error:", error);
-    res.status(500).json({ message: "Server error" });
+    return res.status(401).json({
+      success: false,
+      message: "Invalid refresh token",
+    });
   }
-};
+});

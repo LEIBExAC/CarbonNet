@@ -1,21 +1,53 @@
 const express = require("express");
-const verifyToken = require("../middleware/verifyToken");
-const {
-  signup,
-  verifyOtp,
-  signin,
-  requestResetOtp,
-  verifyResetOtp,
-  changePassword,
-} = require("../controllers/authController");
-
 const router = express.Router();
+const {
+  register,
+  verifyEmail,
+  login,
+  logout,
+  getMe,
+  forgotPassword,
+  resetPassword,
+  changePassword,
+  refreshToken,
+} = require("../controllers/authController");
+const { protect } = require("../middleware/auth");
+const {
+  registerValidation,
+  loginValidation,
+  validate,
+} = require("../middleware/validator");
+const rateLimit = require("express-rate-limit");
 
-router.post("/signup", signup);
-router.post("/verify-otp", verifyOtp);
-router.post("/signin", signin);
-router.post("/request-reset-otp", requestResetOtp);
-router.post("/verify-reset-otp", verifyResetOtp);
-router.post("/change-password", verifyToken, changePassword);
+// Rate limiters
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: "Too many login attempts, please try again after 15 minutes",
+});
+
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  message: "Too many accounts created, please try again after an hour",
+});
+
+router.post(
+  "/register",
+  registerLimiter,
+  registerValidation,
+  validate,
+  register
+);
+router.get("/verify-email/:token", verifyEmail);
+router.post("/login", loginLimiter, loginValidation, validate, login);
+router.post("/forgot-password", forgotPassword);
+router.put("/reset-password/:token", resetPassword);
+router.post("/refresh-token", refreshToken);
+
+// Protected routes
+router.post("/logout", protect, logout);
+router.get("/me", protect, getMe);
+router.put("/change-password", protect, changePassword);
 
 module.exports = router;
