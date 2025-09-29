@@ -13,6 +13,9 @@ const { connectMySQL } = require("./config/mysqlconfig");
 
 const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/user");
+const institutionRoutes = require("./routes/institution");
+const activityRoutes = require("./routes/activity");
+const emissionRoutes = require("./routes/emission");
 
 const { errorHandler, notFound } = require("./middleware/errorHandler");
 
@@ -56,6 +59,9 @@ app.get("/health", (req, res) => {
 
 app.use("/auth", authRoutes);
 app.use("/users", userRoutes);
+app.use("/institutions", institutionRoutes);
+app.use("/activities", activityRoutes);
+app.use("/emissions", emissionRoutes);
 
 // Root route, Same use as /health but more general, also added for security.
 app.use("/", (req, res) => {
