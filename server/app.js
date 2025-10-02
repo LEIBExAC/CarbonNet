@@ -16,6 +16,9 @@ const userRoutes = require("./routes/user");
 const institutionRoutes = require("./routes/institution");
 const activityRoutes = require("./routes/activity");
 const emissionRoutes = require("./routes/emission");
+const challengeRoutes = require("./routes/challenge");
+const adminRoutes = require("./routes/admin");
+const uploadRoutes = require("./routes/upload");
 
 const { errorHandler, notFound } = require("./middleware/errorHandler");
 
@@ -62,6 +65,9 @@ app.use("/users", userRoutes);
 app.use("/institutions", institutionRoutes);
 app.use("/activities", activityRoutes);
 app.use("/emissions", emissionRoutes);
+app.use("/challenges", challengeRoutes);
+app.use("/admin", adminRoutes);
+app.use("/upload", uploadRoutes);
 
 // Root route, Same use as /health but more general, also added for security.
 app.use("/", (req, res) => {
