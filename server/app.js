@@ -9,24 +9,25 @@ require("dotenv").config();
 
 // db
 const { connectMongoDB } = require("./config/dbconfig");
-const { connectMySQL } = require("./config/mysqlconfig");
+// const { connectMySQL } = require("./config/mysqlconfig");
 
 const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/user");
 const institutionRoutes = require("./routes/institution");
 const activityRoutes = require("./routes/activity");
 const emissionRoutes = require("./routes/emission");
+const reportRoutes = require("./routes/report");
 const challengeRoutes = require("./routes/challenge");
 const adminRoutes = require("./routes/admin");
 const uploadRoutes = require("./routes/upload");
-const reportRoutes = require("./routes/report");
 
 const { errorHandler, notFound } = require("./middleware/errorHandler");
 
 const app = express();
 
 connectMongoDB();
-connectMySQL();
+// Stopping MySQL connection for now
+// connectMySQL();
 
 app.use(helmet());
 app.use(compression());
@@ -66,19 +67,19 @@ app.use("/users", userRoutes);
 app.use("/institutions", institutionRoutes);
 app.use("/activities", activityRoutes);
 app.use("/emissions", emissionRoutes);
+app.use("/reports", reportRoutes);
 app.use("/challenges", challengeRoutes);
 app.use("/admin", adminRoutes);
 app.use("/upload", uploadRoutes);
-app.use("/reports", reportRoutes);
 
 // Root route, Same use as /health but more general, also added for security.
-app.use("/", (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: "API is working",
-    timestamp: new Date().toISOString(),
-  });
-});
+// app.use("/", (req, res) => {
+//   res.status(200).json({
+//     success: true,
+//     message: "API is working",
+//     timestamp: new Date().toISOString(),
+//   });
+// });
 
 app.use(notFound);
 
