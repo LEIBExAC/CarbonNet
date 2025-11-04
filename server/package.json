@@ -1,5 +1,5 @@
 {
-  "name": "CarbonNet",
+  "name": "carbonnet",
   "version": "1.0.0",
   "description": "Carbon Emission Tracking and Sustainability Platform",
   "main": "app.js",
