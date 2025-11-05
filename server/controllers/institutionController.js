@@ -406,3 +406,27 @@ exports.addInstitutionAdmin = asyncHandler(async (req, res) => {
     data: { institution },
   });
 });
+
+/**
+ * @desc    Get institutions where current user is an admin
+ * @route   GET institutions/my-institutions
+ * @access  Private/Admin
+ */
+exports.getMyInstitutions = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+
+  const institutions = await Institution.find({
+    admins: userId,
+    isDeleted: false,
+  })
+    .populate("admins", "name email")
+    .sort({ createdAt: -1 });
+
+  res.status(200).json({
+    success: true,
+    data: {
+      institutions,
+      count: institutions.length,
+    },
+  });
+});

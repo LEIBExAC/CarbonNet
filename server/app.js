@@ -56,7 +56,16 @@ const limiter = rateLimit({
   message: "Too many requests from this IP, please try again later.",
 });
 app.use("/", limiter);
-
+app.get("/",(req,res)=>{
+res.send(`
+  <div style="font-family: Arial, sans-serif; text-align: center; margin-top: 50px;">
+    <h2 style="color: #28a745;">✅ Server is Running Successfully!</h2>
+    <p style="font-size: 18px; color: #333;">
+      You can now use the <b>server API</b> further without any issues.
+    </p>
+  </div>
+`);
+})
 app.get("/health", (req, res) => {
   res.status(200).json({
     success: true,
