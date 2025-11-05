@@ -1,0 +1,13 @@
+export { default as LandingPage } from "./LandingPage";
+export { default as LoginPage } from "./LoginPage";
+export { default as RegisterPage } from "./RegisterPage";
+export { default as DashboardPage } from "./DashboardPage";
+export { default as ActivitiesPage } from "./ActivitiesPage";
+export { default as ChallengesPage } from "./ChallengesPage";
+export { default as LeaderboardPage } from "./LeaderboardPage";
+export { default as ProfilePage } from "./ProfilePage";
+export { default as StatisticsPage } from "./StatisticsPage";
+export { default as ReportsPage } from "./ReportsPage";
+export { default as ForgotPasswordPage } from "./ForgotPasswordPage";
+export { default as ResetPasswordPage } from "./ResetPasswordPage";
+export { default as VerifyEmailPage } from "./VerifyEmailPage";
