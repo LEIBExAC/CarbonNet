@@ -11,6 +11,7 @@ const {
   addDepartment,
   updateEmissionFactors,
   addInstitutionAdmin,
+  getMyInstitutions,
 } = require("../controllers/institutionController");
 const { protect, authorize } = require("../middleware/auth");
 const {
@@ -36,6 +37,13 @@ router.get(
   paginationValidation,
   validate,
   getAllInstitutions
+);
+
+router.get(
+  "/my-institutions",
+  protect,
+  authorize("admin", "superadmin"),
+  getMyInstitutions
 );
 
 router.get("/:id", protect, mongoIdValidation, validate, getInstitution);

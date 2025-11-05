@@ -250,7 +250,13 @@ class ApiClient {
       const query = new URLSearchParams(params).toString();
       return this.request(`/institutions?${query}`);
     },
+    getMyInstitutions: () => this.request(`/institutions/my-institutions`),
     getById: (id) => this.request(`/institutions/${id}`),
+    getDashboard: (id, params) => {
+      const query = new URLSearchParams(params).toString();
+      return this.request(`/institutions/${id}/dashboard?${query}`);
+    },
+    getDepartments: (id) => this.request(`/institutions/${id}/departments`),
     getLeaderboard: (id) => this.request(`/institutions/${id}/leaderboard`),
     getTopContributors: (id) =>
       this.request(`/institutions/${id}/top-contributors`),
