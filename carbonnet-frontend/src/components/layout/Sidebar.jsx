@@ -75,7 +75,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       ? [
           {
             id: "admin-users",
-            label: "User Management",
+            label: "Manage user",
             icon: Shield,
             path: "/admin/users",
             admin: true,
@@ -89,7 +89,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           },
           {
             id: "admin-challenges",
-            label: "Manage Challenges",
+            label: "Challenge Manage",
             icon: Award,
             path: "/admin/challenges",
             admin: true,
@@ -135,7 +135,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           isOpen ? "translate-x-0" : "-translate-x-full"
         } lg:translate-x-0 flex flex-col`}
       >
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4 py-6">
           <div className="flex items-center gap-2 mb-8">
             <Leaf size={32} />
             <h1 className="text-2xl font-bold">CarbonNet</h1>

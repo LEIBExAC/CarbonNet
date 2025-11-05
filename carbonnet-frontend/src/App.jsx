@@ -4,6 +4,7 @@ import {
   Routes,
   Route,
   Navigate,
+  Outlet
 } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ToastProvider } from "./contexts/ToastContext";
@@ -24,6 +25,8 @@ import {
   ResetPasswordPage,
   VerifyEmailPage,
 } from "./pages";
+
+import { ManageUser,MangeChallengePage,EmissionFactorManage,Analytics,Institution } from "./pages/admin";
 
 // Temporary placeholder component for admin pages
 const ComingSoon = ({ title }) => (
@@ -98,31 +101,17 @@ function App() {
                 path="admin"
                 element={
                   <ProtectedRoute requireAdmin>
-                    <div>Admin Section</div>
+                      <Outlet /> {/* ✅ This enables nested admin routes */}
                   </ProtectedRoute>
                 }
               >
-                <Route
-                  path="users"
-                  element={<ComingSoon title="User Management" />}
-                />
-                <Route
-                  path="institutions"
-                  element={<ComingSoon title="Institutions" />}
-                />
-                <Route
-                  path="challenges"
-                  element={<ComingSoon title="Manage Challenges" />}
-                />
-                <Route
-                  path="factors"
-                  element={<ComingSoon title="Emission Factors" />}
-                />
-                <Route
-                  path="analytics"
-                  element={<ComingSoon title="Analytics" />}
-                />
+                <Route path="users" element={<ManageUser/>} />
+                <Route path="institutions" element={<Institution/>} />
+                <Route path="challenges" element={<MangeChallengePage />} />
+                <Route path="factors" element={<EmissionFactorManage />} />
+                <Route path="analytics" element={<Analytics />} />
               </Route>
+
             </Route>
 
             {/* Fallback */}
