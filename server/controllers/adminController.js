@@ -225,3 +225,59 @@ exports.bulkImportEmissionFactors = async (req, res) => {
     data: { count: created.length },
   });
 };
+
+/**
+ * @desc    Approve AI suggestion and persist as EmissionFactor
+ * @route   POST /admin/suggestions/approve
+ * @access  Private/Admin
+ */
+exports.approveAISuggestion = async (req, res) => {
+  const {
+    category,
+    subcategory,
+    description,
+    factor,
+    unit,
+    emissionUnit,
+    scope,
+    institutionId,
+    validFrom,
+    validUntil,
+    metadata,
+  } = req.body;
+
+  if (!category || !subcategory || !factor || !unit || !scope) {
+    return res.status(400).json({
+      success: false,
+      message:
+        "category, subcategory, factor, unit, and scope are required fields",
+    });
+  }
+
+  const emissionFactor = await EmissionFactor.create({
+    category,
+    subcategory,
+    description:
+      description || `AI-approved factor for ${category}/${subcategory}`,
+    factor: parseFloat(factor),
+    unit,
+    emissionUnit: emissionUnit || "kg CO2e",
+    scope: parseInt(scope),
+    source: "AI_APPROVED",
+    sourceYear: new Date().getFullYear(),
+    region: "IN",
+    validFrom: validFrom ? new Date(validFrom) : new Date(),
+    validUntil: validUntil ? new Date(validUntil) : null,
+    isActive: true,
+    institutionId: institutionId || req.user.institutionId || null,
+    customFactor: true,
+    metadata: metadata || {},
+    createdBy: req.user.id,
+  });
+
+  res.status(201).json({
+    success: true,
+    message: "AI suggestion approved and saved as emission factor",
+    data: { emissionFactor },
+  });
+};

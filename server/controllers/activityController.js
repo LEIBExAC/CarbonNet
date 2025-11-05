@@ -4,6 +4,34 @@ const { asyncHandler } = require("../middleware/errorHandler");
 const { calculateEmissions } = require("../utility/emissionCalculator");
 
 /**
+ * @desc    Preview emission calculation without saving
+ * @route   POST /activities/estimate
+ * @access  Private
+ */
+exports.estimateActivity = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const institutionId = req.user.institutionId;
+
+  const activityData = {
+    ...req.body,
+    userId,
+    institutionId,
+  };
+
+  const emissionResult = await calculateEmissions(activityData);
+
+  res.status(200).json({
+    success: true,
+    message: "Emission estimated successfully",
+    data: {
+      carbonEmission: emissionResult.total,
+      emissionFactorUsed: emissionResult.factorUsed,
+      activity: activityData,
+    },
+  });
+});
+
+/**
  * @desc    Create new activity
  * @route   POST /activities
  * @access  Private

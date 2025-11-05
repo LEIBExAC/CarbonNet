@@ -110,11 +110,24 @@ exports.calculateEmissions = async (activityData) => {
         break;
 
       default:
-        totalEmissions = activityData.quantity * 0.5; // Generic
+        try {
+          const { isEnabled, estimateEmissions } = require("./aiEstimator");
+          if (isEnabled()) {
+            const ai = await estimateEmissions(activityData);
+            if (ai && typeof ai.total === "number") {
+              totalEmissions = ai.total;
+              factorUsed = ai.factorUsed || { source: "AI_ESTIMATE", version: new Date().getFullYear().toString() };
+              break;
+            }
+          }
+        } catch (err) {
+          console.log("AI estimator failed for generic emissions", err);
+        }
+        totalEmissions = (activityData.quantity || 0) * 0.5; // Fallback generic factor
         factorUsed = {
           factor: 0.5,
           source: "ESTIMATED",
-          version: "2023",
+          version: new Date().getFullYear().toString(),
         };
     }
 
@@ -156,6 +169,20 @@ async function calculateTransportationEmissions(activityData, institutionId) {
     console.log("Using default emission factor for transportation");
   }
 
+  if (!emissionFactor) {
+    try {
+      const { isEnabled, estimateEmissions } = require("./aiEstimator");
+      if (isEnabled()) {
+        const ai = await estimateEmissions(activityData);
+        if (ai && typeof ai.total === "number") {
+          return ai.total;
+        }
+      }
+    } catch (err) {
+      console.log("AI estimator failed for transportation emissions", err);
+    }
+  }
+
   let emissions = distance * (emissionFactor || 0.1);
 
   if (passengers && passengers > 1) {
@@ -186,13 +213,27 @@ async function calculateElectricityEmissions(activityData, institutionId) {
     console.log("Using default emission factor for electricity");
   }
 
-  return consumption * emissionFactor;
+  if (!emissionFactor) {
+    try {
+      const { isEnabled, estimateEmissions } = require("./aiEstimator");
+      if (isEnabled()) {
+        const ai = await estimateEmissions(activityData);
+        if (ai && typeof ai.total === "number") {
+          return ai.total;
+        }
+      }
+    } catch (err) {
+      console.log("AI estimator failed for electricity emissions", err);
+      }
+  }
+
+  return consumption * (emissionFactor || 0.82);
 }
 
 async function calculateFoodEmissions(activityData, institutionId) {
   const { dietType, quantity, foodWaste } = activityData.food;
 
-  let emissionFactor = DEFAULT_FACTORS.food[dietType] || 2.0;
+  let emissionFactor = DEFAULT_FACTORS.food[dietType] || null;
 
   try {
     const dbFactor = await EmissionFactor.getFactorForInstitution(
@@ -207,7 +248,21 @@ async function calculateFoodEmissions(activityData, institutionId) {
     console.log("Using default emission factor for food");
   }
 
-  let emissions = emissionFactor * (quantity || 1);
+  if (!emissionFactor) {
+    try {
+      const { isEnabled, estimateEmissions } = require("./aiEstimator");
+      if (isEnabled()) {
+        const ai = await estimateEmissions(activityData);
+        if (ai && typeof ai.total === "number") {
+          return ai.total;
+        }
+      }
+    } catch (err) {
+      console.log("AI estimator failed for food emissions", err);
+    }
+  }
+
+  let emissions = (emissionFactor || 2.0) * (quantity || 1);
 
   if (foodWaste && foodWaste > 0) {
     emissions += foodWaste * DEFAULT_FACTORS.waste.food;
@@ -222,7 +277,7 @@ async function calculateWasteEmissions(activityData, institutionId) {
   if (!quantity || quantity <= 0) return 0;
 
   let emissionFactor =
-    DEFAULT_FACTORS.waste[type] || DEFAULT_FACTORS.waste.general;
+    DEFAULT_FACTORS.waste[type] || null;
 
   try {
     const dbFactor = await EmissionFactor.getFactorForInstitution(
@@ -237,7 +292,21 @@ async function calculateWasteEmissions(activityData, institutionId) {
     console.log("Using default emission factor for waste");
   }
 
-  let emissions = quantity * emissionFactor;
+  if (!emissionFactor) {
+    try {
+      const { isEnabled, estimateEmissions } = require("./aiEstimator");
+      if (isEnabled()) {
+        const ai = await estimateEmissions(activityData);
+        if (ai && typeof ai.total === "number") {
+          return ai.total;
+        }
+      }
+    } catch (err) {
+      console.log("AI estimator failed for waste emissions", err);
+    }
+  }
+
+  let emissions = quantity * (emissionFactor || DEFAULT_FACTORS.waste.general);
 
   if (recycled) {
     emissions = emissions * 0.3;
@@ -266,7 +335,21 @@ async function calculateWaterEmissions(activityData, institutionId) {
     console.log("Using default emission factor for water");
   }
 
-  return consumption * emissionFactor;
+  if (!emissionFactor) {
+    try {
+      const { isEnabled, estimateEmissions } = require("./aiEstimator");
+      if (isEnabled()) {
+        const ai = await estimateEmissions(activityData);
+        if (ai && typeof ai.total === "number") {
+          return ai.total;
+        }
+      }
+    } catch (err) {
+      console.log("AI estimator failed for water emissions", err);
+    }
+  }
+
+  return consumption * (emissionFactor || DEFAULT_FACTORS.water.consumption);
 }
 
 exports.calculateInstitutionalEmissions = async (
