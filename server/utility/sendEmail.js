@@ -1,23 +1,79 @@
-const transporter = require("../config/mailconfig");
+const { emailClient, emailService } = require("../config/mailconfig");
 
 exports.sendEmail = async (options) => {
-  const mailOptions = {
-    from: `${process.env.EMAIL_FROM || "Carbon Net"} <${
-      process.env.EMAIL_USER
-    }>`,
-    to: options.to,
-    subject: options.subject,
-    text: options.text,
-    html: options.html,
-  };
+  if (!emailClient) {
+    console.warn("Email not sent - Email service not configured");
+    console.log(`Would have sent email to: ${options.to}`);
+    console.log(`Subject: ${options.subject}`);
+    return {
+      success: false,
+      message: "Email service not configured",
+      warning: true,
+    };
+  }
 
   try {
-    const info = await transporter.sendMail(mailOptions);
-    console.log("Email sent:", info.messageId);
-    return info;
+    if (emailService === "microservice") {
+      const result = await emailClient.sendEmail({
+        to: options.to,
+        subject: options.subject,
+        html: options.html,
+        text: options.text,
+      });
+
+      if (!result.success) {
+        return result;
+      }
+
+      return { success: true, messageId: result.messageId };
+    } else if (emailService === "resend") {
+      const { data, error } = await emailClient.emails.send({
+        from: process.env.EMAIL_FROM || "CarbonNet <onboarding@resend.dev>",
+        to: [options.to],
+        subject: options.subject,
+        html: options.html,
+      });
+
+      if (error) {
+        console.error("Resend error:", error);
+        return {
+          success: false,
+          message: "Email could not be sent",
+          error: error.message,
+        };
+      }
+
+      console.log("Email sent via Resend");
+      console.log(`   To: ${options.to}`);
+      console.log(`   Subject: ${options.subject}`);
+
+      return { success: true, messageId: data.id };
+    } else if (emailService === "gmail") {
+      const mailOptions = {
+        from: `${process.env.EMAIL_FROM || "Carbon Net"} <${
+          process.env.EMAIL_USER
+        }>`,
+        to: options.to,
+        subject: options.subject,
+        text: options.text,
+        html: options.html,
+      };
+
+      const info = await emailClient.sendMail(mailOptions);
+      console.log("Email sent via Gmail SMTP");
+      console.log(`   To: ${options.to}`);
+      console.log(`   Subject: ${options.subject}`);
+
+      return { success: true, messageId: info.messageId };
+    }
   } catch (error) {
-    console.error("Email sending error:", error);
-    throw new Error("Email could not be sent");
+    console.error("Email sending error:", error.message);
+
+    return {
+      success: false,
+      message: "Email could not be sent",
+      error: error.message,
+    };
   }
 };
 
