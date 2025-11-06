@@ -272,11 +272,6 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
       message: "Email could not be sent",
     });
   }
-
-  res.status(200).json({
-    success: true,
-    message: "Password reset email sent successfully. Please check your inbox.",
-  });
 });
 
 /**

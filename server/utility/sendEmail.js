@@ -1,80 +1,23 @@
-const { emailClient, emailService } = require("../config/mailconfig");
+const transporter = require("../config/mailconfig");
 
 exports.sendEmail = async (options) => {
-  if (!emailClient) {
-    console.warn("Email not sent - Email service not configured");
-    console.log(`Would have sent email to: ${options.to}`);
-    console.log(`Subject: ${options.subject}`);
-    return {
-      success: false,
-      message: "Email service not configured",
-      warning: true,
-    };
-  }
+  const mailOptions = {
+    from: `${process.env.EMAIL_FROM || "Carbon Net"} <${
+      process.env.EMAIL_USER
+    }>`,
+    to: options.to,
+    subject: options.subject,
+    text: options.text,
+    html: options.html,
+  };
 
   try {
-    if (emailService === "resend") {
-      const { data, error } = await emailClient.emails.send({
-        from: process.env.EMAIL_FROM || "CarbonNet <onboarding@resend.dev>",
-        to: [options.to],
-        subject: options.subject,
-        html: options.html,
-      });
-
-      if (error) {
-        console.error("Resend error:", error);
-        return {
-          success: false,
-          message: "Email could not be sent",
-          error: error.message,
-        };
-      }
-
-      console.log("Email sent via Resend");
-      console.log(`   To: ${options.to}`);
-      console.log(`   Subject: ${options.subject}`);
-      console.log(`   ID: ${data.id}`);
-
-      return { success: true, messageId: data.id };
-    } else if (emailService === "gmail") {
-      const mailOptions = {
-        from: `${process.env.EMAIL_FROM || "Carbon Net"} <${
-          process.env.EMAIL_USER
-        }>`,
-        to: options.to,
-        subject: options.subject,
-        text: options.text,
-        html: options.html,
-        headers: {
-          "X-Mailer": "CarbonNet",
-          "X-Priority": "3",
-        },
-      };
-
-      const info = await emailClient.sendMail(mailOptions);
-      console.log("Email sent via Gmail SMTP");
-      console.log(`   To: ${options.to}`);
-      console.log(`   Subject: ${options.subject}`);
-      console.log(`   Message ID: ${info.messageId}`);
-
-      return { success: true, messageId: info.messageId };
-    }
+    const info = await transporter.sendMail(mailOptions);
+    console.log("Email sent:", info.messageId);
+    return info;
   } catch (error) {
-    console.error("Email sending error:", error.message);
-
-    // Provide helpful error messages
-    if (error.message.includes("Invalid login")) {
-      console.error("Gmail authentication failed. Check your App Password.");
-    } else if (error.message.includes("ETIMEDOUT")) {
-      console.error("Connection timeout. SMTP ports may be blocked.");
-      console.error("Use Resend for production (HTTP API)");
-    }
-
-    return {
-      success: false,
-      message: "Email could not be sent",
-      error: error.message,
-    };
+    console.error("Email sending error:", error);
+    throw new Error("Email could not be sent");
   }
 };
 
