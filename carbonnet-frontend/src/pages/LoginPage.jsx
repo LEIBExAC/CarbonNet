@@ -6,8 +6,13 @@ import { useToast } from "../contexts/ToastContext";
 import { Button, Input, Card } from "../components/ui";
 
 const LoginPage = () => {
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(
+    () => localStorage.getItem("rememberedEmail") || ""
+  );
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(
+    () => !!localStorage.getItem("rememberedEmail")
+  );
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const { success, error } = useToast();
@@ -19,6 +24,14 @@ const LoginPage = () => {
 
     try {
       await login({ email, password });
+
+      // Handle remember me
+      if (rememberMe) {
+        localStorage.setItem("rememberedEmail", email);
+      } else {
+        localStorage.removeItem("rememberedEmail");
+      }
+
       success("Login successful!");
       navigate("/dashboard");
     } catch (err) {
@@ -29,7 +42,7 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-linear-to-br from-emerald-50 to-teal-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-4">
@@ -65,9 +78,11 @@ const LoginPage = () => {
             />
 
             <div className="flex items-center justify-between">
-              <label className="flex items-center">
+              <label className="flex items-center cursor-pointer">
                 <input
                   type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
                   className="mr-2 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
                 />
                 <span className="text-sm text-gray-600">Remember me</span>

@@ -35,9 +35,15 @@ const DashboardPage = () => {
     );
   }
 
-  const stats = dashboard?.summary || {};
-  const categoryBreakdown = dashboard?.breakdown || [];
+  const summary = dashboard?.summary || {};
   const recentActivities = dashboard?.recentActivities || [];
+  // Transform emissionsByCategory to chart-friendly breakdown if present
+  const categoryBreakdown = dashboard?.emissionsByCategory
+    ? Object.entries(dashboard.emissionsByCategory).map(([category, emissions]) => ({
+        category,
+        emissions,
+      }))
+    : [];
 
   return (
     <div className="space-y-6">
@@ -51,27 +57,26 @@ const DashboardPage = () => {
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
-          title="Total Emissions"
-          value={formatEmissions(stats.totalEmissions || 0)}
+          title="Monthly Emissions"
+          value={formatEmissions(summary.monthlyEmissions || 0)}
           icon={TrendingDown}
           color="red"
-          trend={stats.trend}
         />
         <StatCard
           title="Activities Logged"
-          value={formatNumber(stats.totalActivities || 0, 0)}
+          value={formatNumber(summary.totalActivities || 0, 0)}
           icon={Activity}
           color="blue"
         />
         <StatCard
           title="Points Earned"
-          value={formatNumber(stats.totalPoints || 0, 0)}
+          value={formatNumber(summary.totalPoints || 0, 0)}
           icon={Award}
           color="amber"
         />
         <StatCard
           title="Streak Days"
-          value={formatNumber(stats.currentStreak || 0, 0)}
+          value={formatNumber(summary.currentStreak || 0, 0)}
           icon={Leaf}
           color="emerald"
         />
@@ -122,10 +127,10 @@ const DashboardPage = () => {
                 </div>
                 <div className="text-right">
                   <p className="font-semibold text-emerald-600">
-                    {formatEmissions(activity.totalEmissions)}
+                    {formatEmissions(activity.carbonEmission || activity.totalEmissions || 0)}
                   </p>
                   <p className="text-sm text-gray-500">
-                    {new Date(activity.date).toLocaleDateString()}
+                    {activity.activityDate ? new Date(activity.activityDate).toLocaleDateString() : '—'}
                   </p>
                 </div>
               </div>

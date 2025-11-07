@@ -11,10 +11,18 @@ class ApiClient {
   }
 
   async request(endpoint, options = {}) {
-    const headers = {
-      "Content-Type": "application/json",
-      ...options.headers,
-    };
+    const headers = { ...options.headers };
+
+    if (
+      !options.skipContentType &&
+      options.headers?.["Content-Type"] !== undefined
+        ? options.headers["Content-Type"]
+        : true
+    ) {
+      if (!(options.body instanceof FormData)) {
+        headers["Content-Type"] = "application/json";
+      }
+    }
 
     if (this.token && !options.skipAuth) {
       headers["Authorization"] = `Bearer ${this.token}`;
@@ -100,7 +108,7 @@ class ApiClient {
     getRecommendations: () => this.request("/activities/recommendations"),
     getTrends: (params) => {
       const query = new URLSearchParams(params).toString();
-      return this.request(`/activities/trends?${query}`);
+      return this.request(`/activities/trends/monthly?${query}`);
     },
   };
 
@@ -171,16 +179,52 @@ class ApiClient {
     },
     getById: (id) => this.request(`/reports/${id}`),
     download: (id) => this.request(`/reports/${id}/download`),
+    downloadFile: async (id) => {
+      const headers = {};
+      if (this.token) headers["Authorization"] = `Bearer ${this.token}`;
+      const res = await fetch(`${this.baseURL}/reports/${id}/download`, {
+        method: "GET",
+        headers,
+        credentials: "include",
+      });
+      if (!res.ok) {
+        throw new Error("Failed to download report");
+      }
+      const disposition = res.headers.get("content-disposition");
+      let filename = "report";
+      if (disposition) {
+        const match = disposition.match(/filename="?([^";]+)"?/i);
+        if (match) filename = match[1];
+      }
+      const blob = await res.blob();
+      return { blob, filename };
+    },
     delete: (id) => this.request(`/reports/${id}`, { method: "DELETE" }),
+  };
+
+  // Notifications
+  notifications = {
+    getAll: (params = {}) => {
+      const query = new URLSearchParams(params).toString();
+      return this.request(`/notifications?${query}`);
+    },
+    markRead: (id) =>
+      this.request(`/notifications/${id}/read`, { method: "POST" }),
+    markAllRead: () =>
+      this.request("/notifications/read-all", { method: "POST" }),
+  };
+
+  // Public metrics
+  metrics = {
+    getPublic: () => this.request("/metrics/public", { skipAuth: true }),
   };
 
   // Upload
   upload = {
     bulkActivities: (formData) =>
-      this.request("/upload/bulk-activities", {
+      this.request("/upload/activities", {
         method: "POST",
         body: formData,
-        headers: {}, // Let browser set Content-Type for FormData
       }),
   };
 
@@ -207,6 +251,28 @@ class ApiClient {
   // Admin
   admin = {
     getDashboard: () => this.request("/admin/dashboard"),
+    getAllUsers: (params) => {
+      const query = new URLSearchParams(params).toString();
+      return this.request(`/admin/users?${query}`);
+    },
+    getAllInstitutions: () => this.request("/admin/institutions"),
+    // Emission factors
+    getEmissionFactors: (params) => {
+      const query = new URLSearchParams(params).toString();
+      return this.request(`/admin/emission-factors?${query}`);
+    },
+    createEmissionFactor: (data) =>
+      this.request("/admin/emission-factors", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    updateEmissionFactor: (id, data) =>
+      this.request(`/admin/emission-factors/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }),
+    deleteEmissionFactor: (id) =>
+      this.request(`/admin/emission-factors/${id}`, { method: "DELETE" }),
     getUsers: (params) => {
       const query = new URLSearchParams(params).toString();
       return this.request(`/users?${query}`);
@@ -260,6 +326,27 @@ class ApiClient {
     getLeaderboard: (id) => this.request(`/institutions/${id}/leaderboard`),
     getTopContributors: (id) =>
       this.request(`/institutions/${id}/top-contributors`),
+    requestJoinByCode: (payload) =>
+      this.request(`/institutions/join-requests/by-code`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+  };
+
+  // Admin - Institution Requests
+  institutionRequests = {
+    list: (params) => {
+      const query = new URLSearchParams(params).toString();
+      return this.request(`/admin/institution-requests?${query}`);
+    },
+    approve: (id) =>
+      this.request(`/admin/institution-requests/${id}/approve`, {
+        method: "PUT",
+      }),
+    reject: (id) =>
+      this.request(`/admin/institution-requests/${id}/reject`, {
+        method: "PUT",
+      }),
   };
 }
 

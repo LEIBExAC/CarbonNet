@@ -112,12 +112,109 @@ exports.activityValidation = [
     .isFloat({ min: 0 })
     .withMessage("Distance must be positive"),
 
+  body("transportation.mode")
+    .if(body("category").equals("transportation"))
+    .notEmpty()
+    .withMessage("Mode is required for transportation")
+    .isIn([
+      "car",
+      "bike",
+      "bus",
+      "train",
+      "metro",
+      "rickshaw",
+      "walk",
+      "flight",
+      "other",
+    ])
+    .withMessage("Invalid transportation mode"),
+
+  body("transportation.fuelType")
+    .if(body("category").equals("transportation"))
+    .notEmpty()
+    .withMessage("Fuel type is required for transportation")
+    .isIn(["petrol", "diesel", "cng", "electric", "hybrid", "none"])
+    .withMessage("Invalid fuel type"),
+
+  body("transportation.passengers")
+    .if(body("category").equals("transportation"))
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage("Passengers must be at least 1"),
+
   body("electricity.consumption")
     .if(body("category").equals("electricity"))
     .notEmpty()
     .withMessage("Consumption is required for electricity")
     .isFloat({ min: 0 })
     .withMessage("Consumption must be positive"),
+
+  body("electricity.source")
+    .if(body("category").equals("electricity"))
+    .notEmpty()
+    .withMessage("Source is required for electricity")
+    .isIn(["grid", "solar", "wind", "hybrid"])
+    .withMessage("Invalid electricity source"),
+
+  body("food.dietType")
+    .if(body("category").equals("food"))
+    .notEmpty()
+    .withMessage("Diet type is required for food")
+    .isIn(["veg", "non-veg", "vegan"])
+    .withMessage("Invalid diet type"),
+
+  body("food.quantity")
+    .if(body("category").equals("food"))
+    .notEmpty()
+    .withMessage("Quantity is required for food")
+    .isFloat({ min: 0 })
+    .withMessage("Food quantity must be positive"),
+
+  body("food.foodWaste")
+    .if(body("category").equals("food"))
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("Food waste must be positive"),
+
+  body("waste.type")
+    .if(body("category").equals("waste"))
+    .notEmpty()
+    .withMessage("Waste type is required")
+    .isIn(["paper", "plastic", "food", "electronic", "general"])
+    .withMessage("Invalid waste type"),
+
+  body("waste.quantity")
+    .if(body("category").equals("waste"))
+    .notEmpty()
+    .withMessage("Waste quantity is required")
+    .isFloat({ min: 0 })
+    .withMessage("Waste quantity must be positive"),
+
+  body("waste.recycled")
+    .if(body("category").equals("waste"))
+    .optional()
+    .isBoolean()
+    .withMessage("Recycled must be a boolean"),
+
+  body("water.consumption")
+    .if(body("category").equals("water"))
+    .notEmpty()
+    .withMessage("Water consumption is required")
+    .isFloat({ min: 0 })
+    .withMessage("Water consumption must be positive"),
+
+  body("water.usage")
+    .if(body("category").equals("water"))
+    .optional()
+    .isIn(["drinking", "washing", "cleaning", "gardening", "other"])
+    .withMessage("Invalid water usage"),
+
+  body("quantity")
+    .if(body("category").equals("other"))
+    .notEmpty()
+    .withMessage("Quantity is required for 'other' category")
+    .isFloat({ min: 0 })
+    .withMessage("Quantity must be positive for 'other' category"),
 ];
 
 // Institution
@@ -171,7 +268,7 @@ exports.reportValidation = [
 
   body("format")
     .optional()
-    .isIn(["pdf", "excel", "csv", "json"])
+    .isIn(["pdf", "excel", "csv", "json", "xlsx"]) // allow shorthand excel/xlsx
     .withMessage("Invalid format"),
 
   body("period.startDate")

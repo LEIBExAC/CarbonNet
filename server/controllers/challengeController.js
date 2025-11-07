@@ -43,7 +43,6 @@ exports.getAllChallenges = asyncHandler(async (req, res) => {
   if (isActive !== undefined) query.isActive = isActive === "true";
   if (featured !== undefined) query.featured = featured === "true";
 
-  // Filter by institution if user is not admin
   if (req.user.role !== "admin" && req.user.role !== "superadmin") {
     query.$or = [
       { institutionId: req.user.institutionId },
@@ -59,10 +58,19 @@ exports.getAllChallenges = asyncHandler(async (req, res) => {
 
   const count = await Challenge.countDocuments(query);
 
+  const enrichedChallenges = challenges.map((challenge) => {
+    const challengeObj = challenge.toObject();
+    challengeObj.participantCount = challenge.participants.length;
+    challengeObj.isJoined = challenge.participants.some(
+      (p) => p.userId.toString() === req.user.id
+    );
+    return challengeObj;
+  });
+
   res.status(200).json({
     success: true,
     data: {
-      challenges,
+      challenges: enrichedChallenges,
       totalPages: Math.ceil(count / limit),
       currentPage: page,
       totalChallenges: count,
@@ -87,9 +95,18 @@ exports.getActiveChallenges = asyncHandler(async (req, res) => {
 
   const challenges = await Challenge.getActiveChallenges(filters);
 
+  const enrichedChallenges = challenges.map((challenge) => {
+    const challengeObj = challenge.toObject();
+    challengeObj.participantCount = challenge.participants.length;
+    challengeObj.isJoined = challenge.participants.some(
+      (p) => p.userId.toString() === req.user.id
+    );
+    return challengeObj;
+  });
+
   res.status(200).json({
     success: true,
-    data: { challenges },
+    data: { challenges: enrichedChallenges },
   });
 });
 
@@ -295,7 +312,11 @@ exports.getMyChallenges = asyncHandler(async (req, res) => {
     totalPoints: 0,
   };
 
-  challenges.forEach((challenge) => {
+  const enrichedChallenges = challenges.map((challenge) => {
+    const challengeObj = challenge.toObject();
+    challengeObj.participantCount = challenge.participants.length;
+    challengeObj.isJoined = true;
+    
     const participant = challenge.participants.find((p) =>
       p.userId.equals(req.user.id)
     );
@@ -310,12 +331,14 @@ exports.getMyChallenges = asyncHandler(async (req, res) => {
         stats.active++;
       }
     }
+    
+    return challengeObj;
   });
 
   res.status(200).json({
     success: true,
     data: {
-      challenges,
+      challenges: enrichedChallenges,
       stats,
     },
   });

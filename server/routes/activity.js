@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const {
   createActivity,
+  estimateActivity,
   getActivities,
   getActivity,
   updateActivity,
@@ -26,6 +27,15 @@ router.post(
   activityValidation,
   validate,
   createActivity
+);
+// Estimate emissions without saving
+router.post(
+  "/estimate",
+  protect,
+  verifyEmail,
+  activityValidation,
+  validate,
+  estimateActivity
 );
 router.get("/", protect, paginationValidation, validate, getActivities);
 router.get("/summary/category", protect, getCategorySummary);

@@ -17,6 +17,8 @@ const institutionRoutes = require("./routes/institution");
 const activityRoutes = require("./routes/activity");
 const emissionRoutes = require("./routes/emission");
 const reportRoutes = require("./routes/report");
+const notificationRoutes = require("./routes/notification");
+const metricsRoutes = require("./routes/metrics");
 const challengeRoutes = require("./routes/challenge");
 const adminRoutes = require("./routes/admin");
 const uploadRoutes = require("./routes/upload");
@@ -52,7 +54,7 @@ if (process.env.NODE_ENV === "development") {
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 50,
+  max: 500,
   message: "Too many requests from this IP, please try again later.",
 });
 app.use("/", limiter);
@@ -80,6 +82,8 @@ app.use("/institutions", institutionRoutes);
 app.use("/activities", activityRoutes);
 app.use("/emissions", emissionRoutes);
 app.use("/reports", reportRoutes);
+app.use("/notifications", notificationRoutes);
+app.use("/metrics", metricsRoutes);
 app.use("/challenges", challengeRoutes);
 app.use("/admin", adminRoutes);
 app.use("/upload", uploadRoutes);

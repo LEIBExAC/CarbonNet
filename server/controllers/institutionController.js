@@ -1,6 +1,7 @@
 const Institution = require("../models/institution");
 const Activity = require("../models/activity");
 const User = require("../models/user");
+const InstitutionRequest = require("../models/institutionRequest");
 const { asyncHandler } = require("../middleware/errorHandler");
 const {
   calculateInstitutionalEmissions,
@@ -396,7 +397,7 @@ exports.addInstitutionAdmin = asyncHandler(async (req, res) => {
       message: "User is already an admin of this institution",
     });
   }
-  
+
   institution.admins.addToSet(adminId);
   await institution.save();
 
@@ -429,4 +430,201 @@ exports.getMyInstitutions = asyncHandler(async (req, res) => {
       count: institutions.length,
     },
   });
+});
+
+/**
+ * @desc    Request to join an institution by code
+ * @route   POST /institutions/join-requests/by-code
+ * @access  Private
+ */
+exports.requestJoinByCode = asyncHandler(async (req, res) => {
+  const { code, message } = req.body;
+  if (!code) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Institution code is required" });
+  }
+
+  const institution = await Institution.findOne({
+    code: code.toUpperCase(),
+    isActive: true,
+  });
+  if (!institution) {
+    return res
+      .status(404)
+      .json({ success: false, message: "Institution not found" });
+  }
+
+  // If user already belongs to an institution, block or replace? For now, block.
+  const user = await User.findById(req.user.id);
+  if (user.institutionId) {
+    return res
+      .status(400)
+      .json({
+        success: false,
+        message: "You already belong to an institution",
+      });
+  }
+
+  // Prevent duplicate pending requests
+  const existing = await InstitutionRequest.findOne({
+    userId: req.user.id,
+    status: "pending",
+  });
+  if (existing) {
+    return res
+      .status(400)
+      .json({ success: false, message: "You already have a pending request" });
+  }
+
+  const request = await InstitutionRequest.create({
+    userId: req.user.id,
+    institutionId: institution._id,
+    message: message || "",
+  });
+
+  res
+    .status(201)
+    .json({ success: true, message: "Request submitted", data: { request } });
+});
+
+/**
+ * @desc    List join requests (admin or superadmin)
+ * @route   GET /admin/institution-requests
+ * @access  Private/Admin
+ */
+exports.listJoinRequests = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20, status = "pending", institutionId } = req.query;
+
+  const query = {};
+  if (status !== "all") query.status = status;
+  if (institutionId) query.institutionId = institutionId;
+
+  // If admin (not superadmin), restrict to institution they administer
+  if (req.user.role === "admin" && !institutionId) {
+    return res
+      .status(400)
+      .json({
+        success: false,
+        message: "institutionId is required for admins",
+      });
+  }
+  if (req.user.role === "admin" && institutionId) {
+    const inst = await Institution.findById(institutionId).select("admins");
+    if (!inst || !inst.admins.map(String).includes(String(req.user.id))) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "Not authorized for this institution",
+        });
+    }
+  }
+
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const total = await InstitutionRequest.countDocuments(query);
+  const requests = await InstitutionRequest.find(query)
+    .populate("userId", "name email userType")
+    .populate("institutionId", "name code")
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(parseInt(limit));
+
+  res
+    .status(200)
+    .json({
+      success: true,
+      data: {
+        requests,
+        pagination: {
+          total,
+          page: parseInt(page),
+          pages: Math.ceil(total / parseInt(limit)),
+          limit: parseInt(limit),
+        },
+      },
+    });
+});
+
+/**
+ * @desc    Approve join request
+ * @route   PUT /admin/institution-requests/:id/approve
+ * @access  Private/Admin
+ */
+exports.approveJoinRequest = asyncHandler(async (req, res) => {
+  const reqDoc = await InstitutionRequest.findById(req.params.id);
+  if (!reqDoc)
+    return res
+      .status(404)
+      .json({ success: false, message: "Request not found" });
+  if (reqDoc.status !== "pending")
+    return res
+      .status(400)
+      .json({ success: false, message: "Request is not pending" });
+
+  // Authorization: if admin, must be admin of the institution
+  if (req.user.role === "admin") {
+    const inst = await Institution.findById(reqDoc.institutionId).select(
+      "admins"
+    );
+    if (!inst || !inst.admins.map(String).includes(String(req.user.id))) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "Not authorized for this institution",
+        });
+    }
+  }
+
+  // Assign user to institution
+  const user = await User.findById(reqDoc.userId);
+  user.institutionId = reqDoc.institutionId;
+  user.status = "active";
+  await user.save();
+
+  reqDoc.status = "approved";
+  reqDoc.reviewedBy = req.user.id;
+  reqDoc.reviewedAt = new Date();
+  await reqDoc.save();
+
+  res.status(200).json({ success: true, message: "Request approved" });
+});
+
+/**
+ * @desc    Reject join request
+ * @route   PUT /admin/institution-requests/:id/reject
+ * @access  Private/Admin
+ */
+exports.rejectJoinRequest = asyncHandler(async (req, res) => {
+  const reqDoc = await InstitutionRequest.findById(req.params.id);
+  if (!reqDoc)
+    return res
+      .status(404)
+      .json({ success: false, message: "Request not found" });
+  if (reqDoc.status !== "pending")
+    return res
+      .status(400)
+      .json({ success: false, message: "Request is not pending" });
+
+  if (req.user.role === "admin") {
+    const inst = await Institution.findById(reqDoc.institutionId).select(
+      "admins"
+    );
+    if (!inst || !inst.admins.map(String).includes(String(req.user.id))) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "Not authorized for this institution",
+        });
+    }
+  }
+
+  reqDoc.status = "rejected";
+  reqDoc.reviewedBy = req.user.id;
+  reqDoc.reviewedAt = new Date();
+  await reqDoc.save();
+
+  res.status(200).json({ success: true, message: "Request rejected" });
 });

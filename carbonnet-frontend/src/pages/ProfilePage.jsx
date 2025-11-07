@@ -18,16 +18,44 @@ const ProfilePage = () => {
     carbonFootprintGoal: user?.carbonFootprintGoal || "",
   });
   const [saving, setSaving] = useState(false);
+  const [joinCode, setJoinCode] = useState("");
+  const [joinMsg, setJoinMsg] = useState("");
+  const [joinLoading, setJoinLoading] = useState(false);
+
+  const handleJoinByCode = async () => {
+    if (!joinCode) {
+      addToast("Please enter an institution code", "error");
+      return;
+    }
+    setJoinLoading(true);
+    try {
+      await api.institutions.requestJoinByCode({
+        code: joinCode,
+        message: joinMsg,
+      });
+      addToast("Join request submitted", "success");
+      setJoinCode("");
+      setJoinMsg("");
+    } catch (e) {
+      addToast(e.message || "Failed to submit request", "error");
+    } finally {
+      setJoinLoading(false);
+    }
+  };
 
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.users.updateProfile(formData);
+      const response = await api.users.updateProfile(formData);
+      console.log("Profile updated:", response);
       addToast("Profile updated successfully", "success");
       setIsEditing(false);
+      // Reload the page to refresh user data
+      setTimeout(() => window.location.reload(), 500);
     } catch (error) {
-      addToast("Failed to update profile", "error");
+      console.error("Profile update error:", error);
+      addToast(error.message || "Failed to update profile", "error");
     } finally {
       setSaving(false);
     }
@@ -46,20 +74,22 @@ const ProfilePage = () => {
         {/* Profile Card */}
         <Card className="lg:col-span-1">
           <div className="text-center">
-            <div className="w-24 h-24 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-full flex items-center justify-center text-white text-4xl font-bold mx-auto mb-4">
+            <div className="w-24 h-24 bg-linear-to-br from-emerald-500 to-teal-600 rounded-full flex items-center justify-center text-white text-4xl font-bold mx-auto mb-4">
               {(user?.name || "").charAt(0).toUpperCase()}
             </div>
             <h2 className="text-2xl font-bold text-gray-900">{user?.name}</h2>
             <p className="text-gray-600 mt-1">{user?.email}</p>
-            <div className="mt-4 space-y-2">
-              <div className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-sm inline-block">
-                {user?.role}
+            <div className="mt-4 flex gap-2 justify-center flex-wrap">
+              <div className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-sm font-medium capitalize">
+                {user?.role || "user"}
               </div>
-              <div className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm inline-block ml-2">
-                {user?.userType}
-              </div>
+              {user?.userType && user.userType !== "regularUser" && (
+                <div className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium capitalize">
+                  {user.userType.replace(/([A-Z])/g, " $1").trim()}
+                </div>
+              )}
             </div>
-            <div className="mt-6 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg">
+            <div className="mt-6 p-4 bg-linear-to-r from-emerald-50 to-teal-50 rounded-lg">
               <div className="flex items-center justify-center gap-2 mb-2">
                 <Award className="text-emerald-600" size={24} />
                 <span className="text-2xl font-bold text-emerald-600">
@@ -164,7 +194,7 @@ const ProfilePage = () => {
                 <div>
                   <label className="text-sm text-gray-600">Institution</label>
                   <p className="font-medium">
-                    {user?.institution?.name || "None"}
+                    {user?.institutionId?.name || "None"}
                   </p>
                 </div>
                 <div>
@@ -180,6 +210,38 @@ const ProfilePage = () => {
           )}
         </Card>
       </div>
+
+      {/* Join Institution */}
+      {!user?.institutionId?._id && user?.role === "user" && (
+        <Card>
+          <h3 className="text-xl font-bold mb-2">Join an Institution</h3>
+          <p className="text-gray-600 mb-4">
+            Enter the institution code provided by your admin to send a join
+            request.
+          </p>
+          <div className="grid md:grid-cols-3 gap-3">
+            <Input
+              label="Institution Code"
+              value={joinCode}
+              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+            />
+            <Input
+              label="Message (optional)"
+              value={joinMsg}
+              onChange={(e) => setJoinMsg(e.target.value)}
+            />
+            <div className="flex items-end">
+              <Button
+                onClick={handleJoinByCode}
+                loading={joinLoading}
+                className="w-full"
+              >
+                Request to Join
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Danger Zone */}
       <Card className="border-2 border-red-200">

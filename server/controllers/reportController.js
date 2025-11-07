@@ -5,6 +5,7 @@ const Papa = require("papaparse");
 const Report = require("../models/report");
 const Activity = require("../models/activity");
 const { asyncHandler } = require("../middleware/errorHandler");
+const PDFDocument = require("pdfkit");
 
 const REPORTS_DIR =
   process.env.REPORTS_PATH || path.join(__dirname, "..", "uploads", "reports");
@@ -13,18 +14,22 @@ if (!fs.existsSync(REPORTS_DIR)) {
 }
 
 function buildAccessQuery(user, body) {
-  const scope =
-    body.scope ||
-    (body.type === "individual"
-      ? "individual"
-      : body.institutionId
-      ? "institution"
-      : "individual");
-  return {
-    scope,
-    institutionId: body.institutionId || user.institutionId,
-    userId: user.id,
-  };
+  const isAdmin = ["admin", "superadmin"].includes(user.role);
+  // Normalize inputs
+  const requestedScope = (body.scope || body.type || "individual").toString().toLowerCase();
+  const requestedInstitutionId = body.institutionId || user.institutionId;
+
+  if (!isAdmin) {
+    // Regular users can only generate individual reports scoped to themselves
+    return { scope: "individual", institutionId: null, userId: user.id };
+  }
+
+  // Admins can request institution or individual scope
+  if (requestedScope === "institution") {
+    return { scope: "institution", institutionId: requestedInstitutionId, userId: user.id };
+  }
+
+  return { scope: "individual", institutionId: null, userId: user.id };
 }
 
 async function fetchActivitiesForPeriod(
@@ -114,7 +119,7 @@ function aggregateReportData(activities, startDate, endDate) {
   return { data, stats };
 }
 
-function writeFileForFormat(reportId, format, payload) {
+async function writeFileForFormat(reportId, format, payload) {
   const base = path.join(REPORTS_DIR, `${reportId}`);
   let filePath, buffer;
 
@@ -161,8 +166,116 @@ function writeFileForFormat(reportId, format, payload) {
     );
     filePath = `${base}.xlsx`;
     xlsx.writeFile(wb, filePath);
+  } else if (format === "pdf") {
+    filePath = `${base}.pdf`;
+    await new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ size: "A4", margin: 50 });
+      const stream = fs.createWriteStream(filePath);
+      stream.on("finish", resolve);
+      stream.on("error", reject);
+      doc.on("error", reject);
+      doc.pipe(stream);
+
+      // Helpers
+      const line = (y = doc.y) => {
+        doc.strokeColor('#e5e7eb').lineWidth(1).moveTo(50, y).lineTo(545, y).stroke();
+      };
+      const section = (title) => {
+        doc.moveDown(0.6).fontSize(14).fillColor('#111827').text(title, { continued: false });
+        line(doc.y + 4);
+        doc.moveDown(0.6).fillColor('#111827');
+      };
+      const drawTable = (headers, rows, widths) => {
+        const startX = 50;
+        let y = doc.y;
+        doc.fontSize(11).fillColor('#374151');
+        headers.forEach((h, i) => {
+          const w = widths[i] || 150;
+          doc.font('Helvetica-Bold').text(h, startX + widths.slice(0, i).reduce((a, b) => a + (b || 150), 0), y, { width: w });
+        });
+        y = doc.y + 6;
+        line(y);
+        y += 8;
+        doc.font('Helvetica');
+        rows.forEach((r) => {
+          if (y > 760) { doc.addPage(); y = 50; }
+          r.forEach((cell, i) => {
+            const w = widths[i] || 150;
+            doc.text(String(cell), startX + widths.slice(0, i).reduce((a, b) => a + (b || 150), 0), y, { width: w });
+          });
+          y = doc.y + 6;
+        });
+        doc.moveDown(0.5);
+      };
+
+      // Header / Brand
+      const logoPath = process.env.REPORT_LOGO_PATH;
+      try {
+        if (logoPath && fs.existsSync(logoPath)) {
+          doc.image(logoPath, 50, 40, { width: 40, height: 40 });
+        }
+      } catch (_) {}
+      doc.fontSize(20).fillColor('#065f46').text('CarbonNet', 100, 40, { continued: true }).fillColor('#111827').text(' – Carbon Emissions Report');
+      line(85);
+      doc.moveDown(1.2);
+
+      const sd = new Date(payload?.data?.metadata?.startDate || Date.now());
+      const ed = new Date(payload?.data?.metadata?.endDate || Date.now());
+      doc.fontSize(10).fillColor('#6b7280').text(`Period: ${sd.toDateString()} - ${ed.toDateString()}`);
+      doc.fontSize(10).fillColor('#6b7280').text(`Generated: ${new Date().toDateString()}`);
+      doc.moveDown(0.5).fillColor('#111827');
+
+      // Summary
+      section('Summary');
+      const summaryRows = [
+        ['Total Emissions (kg CO2e)', (payload.data.totalEmissions || 0).toFixed(2)],
+        ['Total Activities', String(payload.statistics.totalActivities || 0)],
+        ['Average Daily Emissions', (payload.statistics.averageDailyEmissions || 0).toFixed(2)],
+      ];
+      drawTable(['Metric', 'Value'], summaryRows, [300, 180]);
+
+      // Emissions by Category
+      doc.moveDown(0.3);
+      section('Emissions by Category');
+      const catEntries = Object.entries(payload.data.emissionsByCategory || {});
+      if (catEntries.length === 0) {
+        doc.fontSize(11).text("No category data.");
+      } else {
+        const catRows = catEntries.map(([cat, val]) => [cat, Number(val).toFixed(2) + ' kg']);
+        drawTable(['Category', 'Emissions'], catRows, [300, 180]);
+      }
+
+      // Trends (by month)
+      doc.moveDown(0.3);
+      section('Trends (Monthly)');
+      const trends = Object.entries(payload.data.trends || {});
+      if (trends.length === 0) {
+        doc.fontSize(11).text("No trend data.");
+      } else {
+        const trendRows = trends.sort(([a], [b]) => a.localeCompare(b)).map(([m, v]) => [m, Number(v).toFixed(2) + ' kg']);
+        drawTable(['Month', 'Emissions'], trendRows, [300, 180]);
+      }
+
+      // Recommendations
+      if ((payload.data.recommendations || []).length) {
+        doc.moveDown(0.3);
+        section('Recommendations');
+        payload.data.recommendations.forEach((rec, idx) =>
+          doc.fontSize(11).text(`${idx + 1}. ${rec}`)
+        );
+      }
+
+      // Footer with page numbers
+      const range = doc.bufferedPageRange();
+      for (let i = 0; i < range.count; i++) {
+        doc.switchToPage(i);
+        doc.fontSize(9).fillColor('#9ca3af').text(`Page ${i + 1} of ${range.count}` , 0, 800, { align: 'center' });
+      }
+
+      doc.end();
+    });
   } else {
-    throw new Error("Unsupported format. Use json, csv, or excel (xlsx).");
+    throw new Error("Unsupported format. Use json, csv, excel (xlsx) or pdf.");
   }
 
   const stat = fs.statSync(filePath);
@@ -186,6 +299,9 @@ exports.generateReport = asyncHandler(async (req, res) => {
       success: false,
       message: "type and period.startDate/endDate are required",
     });
+  }
+  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+    return res.status(400).json({ success: false, message: "Invalid period dates" });
   }
 
   const {
@@ -218,7 +334,7 @@ exports.generateReport = asyncHandler(async (req, res) => {
     const { data, stats } = aggregateReportData(activities, startDate, endDate);
 
     const payload = { data, statistics: { ...stats } };
-    const { filePath, fileName, fileSize } = writeFileForFormat(
+    const { filePath, fileName, fileSize } = await writeFileForFormat(
       report._id.toString(),
       format.toLowerCase(),
       payload

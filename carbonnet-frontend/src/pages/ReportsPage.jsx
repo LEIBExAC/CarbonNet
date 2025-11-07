@@ -10,6 +10,8 @@ const ReportsPage = () => {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [selectedReport, setSelectedReport] = useState(null);
   const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
@@ -31,7 +33,16 @@ const ReportsPage = () => {
   const handleGenerate = async (formData) => {
     setGenerating(true);
     try {
-      await api.reports.generate(formData);
+      const payload = {
+        title: formData.title,
+        type: formData.type,
+        format: formData.format,
+        period: {
+          startDate: formData.startDate,
+          endDate: formData.endDate,
+        },
+      };
+      await api.reports.generate(payload);
       addToast("Report generation started", "success");
       setShowModal(false);
       setTimeout(loadReports, 2000);
@@ -44,10 +55,32 @@ const ReportsPage = () => {
 
   const handleDownload = async (id) => {
     try {
-      const response = await api.reports.download(id);
+      const { blob, filename } = await api.reports.downloadFile(id);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename || "report";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
       addToast("Report downloaded", "success");
     } catch (error) {
-      addToast("Failed to download report", "error");
+      addToast(error.message || "Failed to download report", "error");
+    }
+  };
+
+  const handleViewReport = async (report) => {
+    if (report.status !== "completed") {
+      addToast("Report is not ready yet", "warning");
+      return;
+    }
+    try {
+      const response = await api.reports.getById(report._id);
+      setSelectedReport(response.data.report || response.data);
+      setShowPreviewModal(true);
+    } catch (error) {
+      addToast("Failed to load report details", "error");
     }
   };
 
@@ -115,8 +148,13 @@ const ReportsPage = () => {
                         {report.format}
                       </td>
                       <td className="px-4 py-3 text-sm">
-                        {new Date(report.startDate).toLocaleDateString()} -{" "}
-                        {new Date(report.endDate).toLocaleDateString()}
+                        {(() => {
+                          const start = report?.period?.startDate || report?.startDate;
+                          const end = report?.period?.endDate || report?.endDate;
+                          const startStr = start ? new Date(start).toLocaleDateString() : "-";
+                          const endStr = end ? new Date(end).toLocaleDateString() : "-";
+                          return `${startStr} - ${endStr}`;
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-sm">
                         <span
@@ -147,6 +185,8 @@ const ReportsPage = () => {
                           <button
                             className="p-1 hover:bg-gray-100 rounded"
                             title="View"
+                            onClick={() => handleViewReport(report)}
+                            disabled={report.status !== "completed"}
                           >
                             <Eye size={16} />
                           </button>
@@ -177,6 +217,19 @@ const ReportsPage = () => {
         onGenerate={handleGenerate}
         loading={generating}
       />
+
+      {/* Report Preview Modal */}
+      <ReportPreviewModal
+        isOpen={showPreviewModal}
+        onClose={() => {
+          setShowPreviewModal(false);
+          setSelectedReport(null);
+        }}
+        report={selectedReport}
+        onDownload={() => {
+          if (selectedReport) handleDownload(selectedReport._id);
+        }}
+      />
     </div>
   );
 };
@@ -191,6 +244,22 @@ const GenerateReportModal = ({ isOpen, onClose, onGenerate, loading }) => {
       .split("T")[0],
     endDate: new Date().toISOString().split("T")[0],
   });
+
+  const daysSelected = (() => {
+    const s = new Date(formData.startDate);
+    const e = new Date(formData.endDate);
+    return Math.max(0, Math.ceil((e - s) / (1000 * 60 * 60 * 24)) + 1);
+  })();
+
+  const pdfAllowed = formData.type === 'individual' && daysSelected <= 200;
+
+  useEffect(() => {
+    // If current selection makes PDF invalid, auto-switch to Excel
+    if (formData.format === 'pdf' && !pdfAllowed) {
+      setFormData((f) => ({ ...f, format: 'excel' }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.type, formData.startDate, formData.endDate]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -226,12 +295,18 @@ const GenerateReportModal = ({ isOpen, onClose, onGenerate, loading }) => {
           value={formData.format}
           onChange={(e) => setFormData({ ...formData, format: e.target.value })}
           options={[
-            { value: "pdf", label: "PDF" },
-            { value: "excel", label: "Excel" },
-            { value: "csv", label: "CSV" },
-            { value: "json", label: "JSON" },
+            ...(pdfAllowed ? [{ value: 'pdf', label: 'PDF' }] : []),
+            { value: 'excel', label: 'Excel' },
+            { value: 'csv', label: 'CSV' },
+            { value: 'json', label: 'JSON' },
           ]}
         />
+
+        {!pdfAllowed && (
+          <p className="text-xs text-amber-600 -mt-2">
+            PDF is unavailable for large or institutional reports. Please use Excel/CSV.
+          </p>
+        )}
 
         <div className="grid md:grid-cols-2 gap-4">
           <Input
@@ -254,6 +329,8 @@ const GenerateReportModal = ({ isOpen, onClose, onGenerate, loading }) => {
           />
         </div>
 
+        <p className="text-xs text-gray-500">Selected range: {daysSelected} days</p>
+
         <div className="flex gap-3 pt-4 border-t">
           <Button
             type="button"
@@ -268,6 +345,100 @@ const GenerateReportModal = ({ isOpen, onClose, onGenerate, loading }) => {
           </Button>
         </div>
       </form>
+    </Modal>
+  );
+};
+
+const ReportPreviewModal = ({ isOpen, onClose, report, onDownload }) => {
+  if (!report) return null;
+
+  const period = report.period || {};
+  const stats = report.statistics || {};
+  const data = report.data || {};
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Report Preview">
+      <div className="space-y-4">
+        {/* Report Info */}
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900">{report.title}</h3>
+          <p className="text-sm text-gray-600 mt-1">
+            {new Date(period.startDate || report.startDate).toLocaleDateString()} -{" "}
+            {new Date(period.endDate || report.endDate).toLocaleDateString()}
+          </p>
+          <div className="flex gap-2 mt-2">
+            <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs capitalize">
+              {report.type}
+            </span>
+            <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs uppercase">
+              {report.format}
+            </span>
+          </div>
+        </div>
+
+        {/* Statistics */}
+        <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+          <div>
+            <p className="text-xs text-gray-600">Total Emissions</p>
+            <p className="text-lg font-bold text-gray-900">
+              {(data.totalEmissions || 0).toFixed(2)} kg CO₂e
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-600">Total Activities</p>
+            <p className="text-lg font-bold text-gray-900">
+              {stats.totalActivities || 0}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-600">Average Daily</p>
+            <p className="text-lg font-bold text-gray-900">
+              {(stats.averageDailyEmissions || 0).toFixed(2)} kg
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-600">File Size</p>
+            <p className="text-lg font-bold text-gray-900">
+              {report.fileSize ? `${(report.fileSize / 1024).toFixed(1)} KB` : 'N/A'}
+            </p>
+          </div>
+        </div>
+
+        {/* Category Breakdown */}
+        {data.emissionsByCategory && Object.keys(data.emissionsByCategory).length > 0 && (
+          <div>
+            <h4 className="font-semibold text-gray-900 mb-2">Emissions by Category</h4>
+            <div className="space-y-2">
+              {Object.entries(data.emissionsByCategory).map(([category, value]) => (
+                <div key={category} className="flex items-center justify-between text-sm">
+                  <span className="capitalize text-gray-700">{category}</span>
+                  <span className="font-medium text-gray-900">{value.toFixed(2)} kg</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="flex gap-3 pt-4 border-t">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            className="flex-1"
+          >
+            Close
+          </Button>
+          <Button
+            type="button"
+            icon={Download}
+            onClick={onDownload}
+            className="flex-1"
+          >
+            Download
+          </Button>
+        </div>
+      </div>
     </Modal>
   );
 };

@@ -1,6 +1,7 @@
 import React from "react";
 import { useState, useEffect } from "react";
 import { useToast } from "../../contexts/ToastContext";
+import { useAuth } from "../../contexts/AuthContext";
 import { Card } from "../../components/ui";
 import api from "../../api/client";
 import {
@@ -24,6 +25,7 @@ import { format } from "date-fns";
 
 export default function ManageUser() {
   const { addToast } = useToast();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState([]);
   const [institutions, setInstitutions] = useState([]);
@@ -35,16 +37,38 @@ export default function ManageUser() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalUsers, setTotalUsers] = useState(0);
   const [pageSize] = useState(20);
+  const isSuperAdmin = user?.role === "superadmin";
 
   useEffect(() => {
-    loadInstitutions();
-  }, []);
+    if (isSuperAdmin) {
+      loadAllInstitutions();
+      loadUsers();
+    } else {
+      loadInstitutions();
+    }
+  }, [isSuperAdmin]);
 
   useEffect(() => {
-    if (institutions.length > 0) {
+    if (isSuperAdmin || institutions.length > 0) {
       loadUsers();
     }
-  }, [selectedInstitutionId, searchQuery, statusFilter, roleFilter, currentPage]);
+  }, [
+    selectedInstitutionId,
+    searchQuery,
+    statusFilter,
+    roleFilter,
+    currentPage,
+  ]);
+
+  const loadAllInstitutions = async () => {
+    try {
+      const response = await api.admin.getAllInstitutions();
+      const fetchedInstitutions = response.data.institutions || [];
+      setInstitutions(fetchedInstitutions);
+    } catch (error) {
+      addToast(error.message || "Failed to load institutions", "error");
+    }
+  };
 
   const loadInstitutions = async () => {
     try {
@@ -57,10 +81,7 @@ export default function ManageUser() {
         setLoading(false);
       }
     } catch (error) {
-      addToast(
-        error.message || "Failed to load institutions",
-        "error"
-      );
+      addToast(error.message || "Failed to load institutions", "error");
       setLoading(false);
     }
   };
@@ -71,8 +92,35 @@ export default function ManageUser() {
       let allUsers = [];
       let totalCount = 0;
 
-      // If "all" is selected, fetch from each institution and combine
-      if (selectedInstitutionId === "all") {
+      if (isSuperAdmin) {
+        const params = {
+          page: currentPage,
+          limit: pageSize,
+        };
+
+        if (searchQuery) {
+          params.search = searchQuery;
+        }
+
+        if (statusFilter !== "all") {
+          params.status = statusFilter;
+        }
+
+        if (roleFilter !== "all") {
+          params.role = roleFilter;
+        }
+
+        if (selectedInstitutionId !== "all") {
+          params.institutionId = selectedInstitutionId;
+        }
+
+        const response = await api.admin.getAllUsers(params);
+        allUsers = response.data.users || [];
+        setTotalPages(response.data.pagination?.pages || 1);
+        totalCount = response.data.pagination?.total || 0;
+      }
+      // Regular admin: If "all" is selected, fetch from each institution and combine
+      else if (selectedInstitutionId === "all") {
         const fetchPromises = institutions.map(async (inst) => {
           const params = {
             page: 1,
@@ -98,12 +146,12 @@ export default function ManageUser() {
 
         const results = await Promise.all(fetchPromises);
         allUsers = results.flat();
-        
+
         // Remove duplicates based on user ID
         const uniqueUsers = Array.from(
           new Map(allUsers.map((user) => [user._id, user])).values()
         );
-        
+
         totalCount = uniqueUsers.length;
 
         // Apply pagination manually
@@ -140,10 +188,7 @@ export default function ManageUser() {
       setUsers(allUsers);
       setTotalUsers(totalCount);
     } catch (error) {
-      addToast(
-        error.message || "Failed to load users",
-        "error"
-      );
+      addToast(error.message || "Failed to load users", "error");
     } finally {
       setLoading(false);
     }
@@ -196,10 +241,12 @@ export default function ManageUser() {
         </span>
       ),
     };
-    return badges[status] || (
-      <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium">
-        {status}
-      </span>
+    return (
+      badges[status] || (
+        <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium">
+          {status}
+        </span>
+      )
     );
   };
 
@@ -211,7 +258,9 @@ export default function ManageUser() {
     };
     return (
       <span
-        className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${colors[role] || colors.user}`}
+        className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${
+          colors[role] || colors.user
+        }`}
       >
         {role}
       </span>
@@ -222,7 +271,10 @@ export default function ManageUser() {
     return (
       <div className="p-8 flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <Loader2 className="animate-spin mx-auto mb-4 text-emerald-600" size={48} />
+          <Loader2
+            className="animate-spin mx-auto mb-4 text-emerald-600"
+            size={48}
+          />
           <p className="text-gray-600">Loading users...</p>
         </div>
       </div>
@@ -349,7 +401,10 @@ export default function ManageUser() {
       {loading ? (
         <Card>
           <div className="text-center py-12">
-            <Loader2 className="animate-spin mx-auto mb-4 text-emerald-600" size={48} />
+            <Loader2
+              className="animate-spin mx-auto mb-4 text-emerald-600"
+              size={48}
+            />
             <p className="text-gray-600">Loading users...</p>
           </div>
         </Card>
@@ -407,10 +462,7 @@ export default function ManageUser() {
                       <td className="py-4 px-4">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center">
-                            <UserIcon
-                              className="text-emerald-600"
-                              size={20}
-                            />
+                            <UserIcon className="text-emerald-600" size={20} />
                           </div>
                           <div>
                             <p className="font-medium text-gray-900">
@@ -469,9 +521,7 @@ export default function ManageUser() {
                           </p>
                         )}
                       </td>
-                      <td className="py-4 px-4">
-                        {getRoleBadge(user.role)}
-                      </td>
+                      <td className="py-4 px-4">{getRoleBadge(user.role)}</td>
                       <td className="py-4 px-4">
                         {getStatusBadge(user.status)}
                       </td>

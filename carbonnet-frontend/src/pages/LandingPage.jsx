@@ -1,10 +1,27 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Leaf, Activity, BarChart3, Award } from "lucide-react";
 import { Button, Card } from "../components/ui";
+import api from "../api/client";
 
 const LandingPage = () => {
   const navigate = useNavigate();
+  const [metrics, setMetrics] = useState({ users: 0, activities: 0, emissions: 0 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await api.metrics.getPublic();
+        setMetrics(res.data);
+      } catch (_) {
+        // leave defaults on failure
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
 
   return (
     <div className="min-h-screen bg-linear-to-br from-emerald-50 to-teal-50">
@@ -40,14 +57,17 @@ const LandingPage = () => {
             <Button size="lg" icon={Leaf} onClick={() => navigate("/register")}>
               Start Tracking Free
             </Button>
-            <Button size="lg" variant="outline">
+            <Button size="lg" variant="outline" onClick={() => {
+              const el = document.getElementById('features');
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }}>
               Learn More
             </Button>
           </div>
         </div>
 
         {/* Features */}
-        <div className="grid md:grid-cols-3 gap-8 mb-16">
+        <div id="features" className="grid md:grid-cols-3 gap-8 mb-16">
           <Card hover>
             <Activity size={32} className="text-emerald-600 mb-4" />
             <h3 className="text-xl font-bold mb-2">Activity Tracking</h3>
@@ -81,20 +101,20 @@ const LandingPage = () => {
           </h3>
           <div className="grid md:grid-cols-4 gap-8">
             <div>
-              <p className="text-4xl font-bold text-emerald-600">10,000+</p>
-              <p className="text-gray-600">Active Users</p>
+              <p className="text-4xl font-bold text-emerald-600">{loading ? '—' : metrics.users.toLocaleString()}</p>
+              <p className="text-gray-600">Registered Users</p>
             </div>
             <div>
-              <p className="text-4xl font-bold text-emerald-600">500K+</p>
+              <p className="text-4xl font-bold text-emerald-600">{loading ? '—' : metrics.activities.toLocaleString()}</p>
               <p className="text-gray-600">Activities Logged</p>
             </div>
             <div>
-              <p className="text-4xl font-bold text-emerald-600">2M kg</p>
-              <p className="text-gray-600">CO₂ Reduced</p>
+              <p className="text-4xl font-bold text-emerald-600">{loading ? '—' : `${metrics.emissions.toLocaleString()} kg`}</p>
+              <p className="text-gray-600">Cumulative CO₂e</p>
             </div>
             <div>
-              <p className="text-4xl font-bold text-emerald-600">150+</p>
-              <p className="text-gray-600">Institutions</p>
+              <p className="text-4xl font-bold text-emerald-600">Live</p>
+              <p className="text-gray-600">Data-backed</p>
             </div>
           </div>
         </div>

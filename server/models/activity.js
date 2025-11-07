@@ -44,6 +44,8 @@ const activitySchema = new mongoose.Schema(
         enum: [
           "car",
           "bike",
+          "motorcycle",
+          "bicycle",
           "bus",
           "train",
           "metro",

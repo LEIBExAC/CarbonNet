@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
-    "test": "jest --watchAll"
+    "test": "jest --watchAll",
+    "seed": "node scripts/seed.js",
+    "seed:reset": "node scripts/seed.js --reset"
   },
   "author": "Aditya",
   "dependencies": {
@@ -30,6 +32,7 @@
     "nodemailer": "^6.9.7",
     "papaparse": "^5.4.1",
     "pdf-parse": "^1.1.1",
+    "pdfkit": "^0.15.2",
     "sequelize": "^6.35.0",
     "xlsx": "^0.18.5"
   },

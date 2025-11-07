@@ -12,6 +12,7 @@ const {
   updateEmissionFactors,
   addInstitutionAdmin,
   getMyInstitutions,
+  requestJoinByCode,
 } = require("../controllers/institutionController");
 const { protect, authorize } = require("../middleware/auth");
 const {
@@ -29,6 +30,9 @@ router.post(
   validate,
   createInstitution
 );
+
+// Join requests (user)
+router.post("/join-requests/by-code", protect, requestJoinByCode);
 
 router.get(
   "/",

@@ -12,6 +12,7 @@ const {
 } = require("../utility/fileParser");
 const { cleanupFile } = require("../middleware/upload");
 const { calculateEmissions } = require("../utility/emissionCalculator");
+const { createNotification } = require("../controllers/notificationController");
 
 /**
  * @desc    Upload activities file
@@ -31,26 +32,40 @@ exports.uploadActivities = asyncHandler(async (req, res) => {
   const fileType = req.file.originalname.split(".").pop().toLowerCase();
 
   try {
+    console.log("[Upload] Parsing file:", filePath, "Type:", fileType);
     const parsedData = await parseFile(filePath, fileType);
+    console.log("[Upload] Parsed data length:", parsedData.length);
 
+    console.log("[Upload] Mapping to activity format with category:", category);
     const mappedActivities = mapToActivityFormat(parsedData, category);
+    console.log("[Upload] Mapped activities length:", mappedActivities.length);
 
+    console.log("[Upload] Validating activities...");
     const validation = validateActivityData(mappedActivities);
+    console.log(
+      "[Upload] Validation result - Valid:",
+      validation.validCount,
+      "Errors:",
+      validation.errorCount
+    );
 
-    // Calculate emissions and create activities
     const createdActivities = [];
     const errors = [...validation.errors];
 
     for (const activityData of validation.valid) {
       try {
-        // Calculate emissions
         const emissionResult = await calculateEmissions({
           ...activityData,
           userId: req.user.id,
           institutionId: req.user.institutionId,
         });
 
-        // Create activity
+        console.log(
+          "[Upload] Calculated emissions:",
+          emissionResult.total,
+          "kg CO2e"
+        );
+
         const activity = await Activity.create({
           ...activityData,
           userId: req.user.id,
@@ -61,8 +76,13 @@ exports.uploadActivities = asyncHandler(async (req, res) => {
           fileReference: req.file.filename,
         });
 
+        console.log("[Upload] Activity created:", activity._id);
         createdActivities.push(activity);
       } catch (error) {
+        console.error("[Upload] Error creating activity:", error.message);
+        if (error.name === "ValidationError") {
+          console.error("[Upload] Validation details:", error.errors);
+        }
         errors.push({
           data: activityData,
           error: error.message,
@@ -70,7 +90,6 @@ exports.uploadActivities = asyncHandler(async (req, res) => {
       }
     }
 
-    // Award points for bulk upload
     if (createdActivities.length > 0) {
       const User = require("../models/user");
       await User.findByIdAndUpdate(req.user.id, {
@@ -80,6 +99,20 @@ exports.uploadActivities = asyncHandler(async (req, res) => {
 
     // Clean up file
     cleanupFile(filePath);
+
+    try {
+      await createNotification({
+        userId: req.user.id,
+        title: "Bulk upload completed",
+        message: `${createdActivities.length} activities imported, ${errors.length} failed`,
+        type: errors.length > 0 ? "warning" : "success",
+        meta: {
+          imported: createdActivities.length,
+          failed: errors.length,
+          file: req.file.filename,
+        },
+      });
+    } catch (_) {}
 
     res.status(201).json({
       success: true,

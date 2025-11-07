@@ -43,7 +43,12 @@ exports.updateProfile = asyncHandler(async (req, res) => {
   if (enrollmentId) user.enrollmentId = enrollmentId;
   if (profileImage) user.profileImage = profileImage;
   if (preferences) user.preferences = { ...user.preferences, ...preferences };
-  if (carbonFootprintGoal) user.carbonFootprintGoal = carbonFootprintGoal;
+  if (carbonFootprintGoal !== undefined) {
+    const val = Number(carbonFootprintGoal);
+    user.carbonFootprintGoal = Number.isFinite(val)
+      ? val
+      : user.carbonFootprintGoal;
+  }
 
   await user.save();
 
@@ -74,6 +79,52 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     userId,
     activityDate: { $gte: startOfYear },
   });
+
+  // Get total activity count (all time)
+  const totalActivitiesCount = await Activity.countDocuments({ userId });
+
+  // Calculate total points (combine stored user points + 1 per activity logged)
+  const userDoc = await User.findById(userId).select("totalPoints");
+  const basePoints = userDoc?.totalPoints || 0;
+  const totalPoints = basePoints + totalActivitiesCount;
+
+  // Calculate current streak (consecutive days with at least one activity)
+  const allActivities = await Activity.find({ userId }).sort({
+    activityDate: -1,
+  });
+  let currentStreak = 0;
+  if (allActivities.length > 0) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const activityDates = [
+      ...new Set(
+        allActivities.map((a) => {
+          const d = new Date(a.activityDate);
+          d.setHours(0, 0, 0, 0);
+          return d.getTime();
+        })
+      ),
+    ].sort((a, b) => b - a);
+
+    const ONE_DAY = 86400000;
+    const topDate = activityDates[0];
+    let checkDate = today.getTime();
+    // If no activity today, but yesterday has, start from yesterday
+    if (topDate === checkDate - ONE_DAY && topDate !== checkDate) {
+      checkDate = topDate;
+    }
+
+    for (let i = 0; i < activityDates.length; i++) {
+      if (activityDates[i] === checkDate) {
+        currentStreak++;
+        checkDate -= ONE_DAY;
+      } else if (activityDates[i] < checkDate) {
+        // Encountered a gap
+        break;
+      }
+    }
+  }
 
   // Total emissions
   const monthlyEmissions = monthlyActivities.reduce(
@@ -119,7 +170,11 @@ exports.getDashboard = asyncHandler(async (req, res) => {
         monthlyEmissions: parseFloat(monthlyEmissions.toFixed(2)),
         yearlyEmissions: parseFloat(yearlyEmissions.toFixed(2)),
         avgDailyEmissions: parseFloat(avgDailyEmissions.toFixed(2)),
-        totalActivities: monthlyActivities.length,
+        totalActivities: totalActivitiesCount,
+        monthlyActivitiesCount: monthlyActivities.length,
+        yearlyActivitiesCount: yearlyActivities.length,
+        totalPoints,
+        currentStreak,
       },
       emissionsByCategory,
       dailyEmissions,
@@ -180,6 +235,7 @@ exports.getStatistics = asyncHandler(async (req, res) => {
       byCategory,
       monthlyTrend,
       period: { startDate, endDate },
+      suggestions: require("../utility/suggestions")(byCategory),
     },
   });
 });

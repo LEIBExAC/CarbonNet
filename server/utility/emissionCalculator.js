@@ -49,11 +49,15 @@ exports.calculateEmissions = async (activityData) => {
           activityData,
           institutionId
         );
+        // Defensive read of nested transportation data
+        const tMode = activityData.transportation?.mode;
+        const tFuel = activityData.transportation?.fuelType;
         factorUsed = {
           factor:
-            DEFAULT_FACTORS.transportation[
-              `${activityData.transportation.mode}_${activityData.transportation.fuelType}`
-            ] || 0.1,
+            (tMode &&
+              tFuel &&
+              DEFAULT_FACTORS.transportation[`${tMode}_${tFuel}`]) ||
+            0.1,
           source: "DEFRA",
           version: "2023",
         };
@@ -64,9 +68,10 @@ exports.calculateEmissions = async (activityData) => {
           activityData,
           institutionId
         );
+        const eSource = activityData.electricity?.source;
         factorUsed = {
           factor:
-            DEFAULT_FACTORS.electricity[activityData.electricity.source] ||
+            (eSource && DEFAULT_FACTORS.electricity[eSource]) ||
             DEFAULT_FACTORS.electricity.grid,
           source: "IPCC",
           version: "2023",
@@ -78,8 +83,9 @@ exports.calculateEmissions = async (activityData) => {
           activityData,
           institutionId
         );
+        const fDiet = activityData.food?.dietType;
         factorUsed = {
-          factor: DEFAULT_FACTORS.food[activityData.food.dietType] || 2.0,
+          factor: (fDiet && DEFAULT_FACTORS.food[fDiet]) || 2.0,
           source: "CUSTOM",
           version: "2023",
         };
@@ -90,8 +96,9 @@ exports.calculateEmissions = async (activityData) => {
           activityData,
           institutionId
         );
+        const wType = activityData.waste?.type;
         factorUsed = {
-          factor: DEFAULT_FACTORS.waste[activityData.waste.type] || 0.45,
+          factor: (wType && DEFAULT_FACTORS.waste[wType]) || 0.45,
           source: "EPA",
           version: "2023",
         };
@@ -112,17 +119,43 @@ exports.calculateEmissions = async (activityData) => {
       default:
         try {
           const { isEnabled, estimateEmissions } = require("./aiEstimator");
+          console.log(
+            "[EmissionCalculator] AI Estimator enabled:",
+            isEnabled()
+          );
           if (isEnabled()) {
+            console.log("[EmissionCalculator] Calling AI estimator with:", {
+              category: activityData.category,
+              subcategory: activityData.subcategory,
+              description: activityData.description,
+              quantity: activityData.quantity,
+              unit: activityData.unit,
+            });
             const ai = await estimateEmissions(activityData);
+            console.log("[EmissionCalculator] AI estimate result:", ai);
             if (ai && typeof ai.total === "number") {
               totalEmissions = ai.total;
-              factorUsed = ai.factorUsed || { source: "AI_ESTIMATE", version: new Date().getFullYear().toString() };
+              factorUsed = ai.factorUsed || {
+                source: "AI_ESTIMATE",
+                version: new Date().getFullYear().toString(),
+              };
               break;
             }
+          } else {
+            console.log(
+              "[EmissionCalculator] AI estimator is disabled - API key not configured"
+            );
           }
         } catch (err) {
-          console.log("AI estimator failed for generic emissions", err);
+          console.error(
+            "AI estimator failed for generic emissions:",
+            err.message
+          );
+          console.error("Full error:", err);
         }
+        console.log(
+          "[EmissionCalculator] Using fallback factor for other category"
+        );
         totalEmissions = (activityData.quantity || 0) * 0.5; // Fallback generic factor
         factorUsed = {
           factor: 0.5,
@@ -149,7 +182,10 @@ exports.calculateEmissions = async (activityData) => {
 };
 
 async function calculateTransportationEmissions(activityData, institutionId) {
-  const { mode, distance, fuelType, passengers } = activityData.transportation;
+  const { mode, distance, fuelType, passengers } =
+    activityData.transportation || {};
+
+  if (!activityData.transportation) return 0; // Missing nested object
 
   if (!distance || distance <= 0) return 0;
 
@@ -193,7 +229,9 @@ async function calculateTransportationEmissions(activityData, institutionId) {
 }
 
 async function calculateElectricityEmissions(activityData, institutionId) {
-  const { consumption, source } = activityData.electricity;
+  const { consumption, source } = activityData.electricity || {};
+
+  if (!activityData.electricity) return 0;
 
   if (!consumption || consumption <= 0) return 0;
 
@@ -224,14 +262,16 @@ async function calculateElectricityEmissions(activityData, institutionId) {
       }
     } catch (err) {
       console.log("AI estimator failed for electricity emissions", err);
-      }
+    }
   }
 
   return consumption * (emissionFactor || 0.82);
 }
 
 async function calculateFoodEmissions(activityData, institutionId) {
-  const { dietType, quantity, foodWaste } = activityData.food;
+  const { dietType, quantity, foodWaste } = activityData.food || {};
+
+  if (!activityData.food) return 0;
 
   let emissionFactor = DEFAULT_FACTORS.food[dietType] || null;
 
@@ -272,12 +312,13 @@ async function calculateFoodEmissions(activityData, institutionId) {
 }
 
 async function calculateWasteEmissions(activityData, institutionId) {
-  const { type, quantity, recycled } = activityData.waste;
+  const { type, quantity, recycled } = activityData.waste || {};
+
+  if (!activityData.waste) return 0;
 
   if (!quantity || quantity <= 0) return 0;
 
-  let emissionFactor =
-    DEFAULT_FACTORS.waste[type] || null;
+  let emissionFactor = DEFAULT_FACTORS.waste[type] || null;
 
   try {
     const dbFactor = await EmissionFactor.getFactorForInstitution(
@@ -316,7 +357,9 @@ async function calculateWasteEmissions(activityData, institutionId) {
 }
 
 async function calculateWaterEmissions(activityData, institutionId) {
-  const { consumption } = activityData.water;
+  const { consumption } = activityData.water || {};
+
+  if (!activityData.water) return 0;
 
   if (!consumption || consumption <= 0) return 0;
 

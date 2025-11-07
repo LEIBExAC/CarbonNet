@@ -227,6 +227,172 @@ exports.bulkImportEmissionFactors = async (req, res) => {
 };
 
 /**
+ * @desc    List emission factors with filters
+ * @route   GET /admin/emission-factors
+ * @access  Private/Admin (superadmin or admin)
+ */
+exports.listEmissionFactors = async (req, res) => {
+  const {
+    page = 1,
+    limit = 20,
+    category,
+    subcategory,
+    source,
+    isActive,
+    institutionId,
+    search = "",
+  } = req.query;
+
+  const query = {};
+  if (category) query.category = category;
+  if (subcategory) query.subcategory = { $regex: subcategory, $options: "i" };
+  if (source) query.source = source;
+  if (typeof isActive !== "undefined") query.isActive = isActive === "true";
+  if (institutionId) query.institutionId = institutionId;
+  if (search) {
+    query.$or = [
+      { description: { $regex: search, $options: "i" } },
+      { subcategory: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const total = await EmissionFactor.countDocuments(query);
+  const factors = await EmissionFactor.find(query)
+    .populate("institutionId", "name code")
+    .sort({ updatedAt: -1 })
+    .skip(skip)
+    .limit(parseInt(limit));
+
+  res.status(200).json({
+    success: true,
+    data: {
+      factors,
+      pagination: {
+        total,
+        page: parseInt(page),
+        pages: Math.ceil(total / parseInt(limit)),
+        limit: parseInt(limit),
+      },
+    },
+  });
+};
+
+/**
+ * @desc    Create emission factor
+ * @route   POST /admin/emission-factors
+ * @access  Private/Admin
+ */
+exports.createEmissionFactor = async (req, res) => {
+  const data = req.body;
+  if (!data.validFrom) data.validFrom = new Date();
+  const factor = await EmissionFactor.create({
+    ...data,
+    createdBy: req.user.id,
+    updatedBy: req.user.id,
+  });
+  res.status(201).json({ success: true, data: { factor } });
+};
+
+/**
+ * @desc    Update emission factor
+ * @route   PUT /admin/emission-factors/:id
+ * @access  Private/Admin
+ */
+exports.updateEmissionFactor = async (req, res) => {
+  const { id } = req.params;
+  const existing = await EmissionFactor.findById(id);
+  if (!existing) {
+    return res
+      .status(404)
+      .json({ success: false, message: "Emission factor not found" });
+  }
+  const updated = await EmissionFactor.findByIdAndUpdate(
+    id,
+    { ...req.body, updatedBy: req.user.id },
+    { new: true }
+  );
+  res.status(200).json({ success: true, data: { factor: updated } });
+};
+
+/**
+ * @desc    Delete emission factor
+ * @route   DELETE /admin/emission-factors/:id
+ * @access  Private/SuperAdmin
+ */
+exports.deleteEmissionFactor = async (req, res) => {
+  const { id } = req.params;
+  const existing = await EmissionFactor.findById(id);
+  if (!existing) {
+    return res
+      .status(404)
+      .json({ success: false, message: "Emission factor not found" });
+  }
+  await existing.deleteOne();
+  res.status(200).json({ success: true, message: "Emission factor deleted" });
+};
+
+/**
+ * @desc    Get all users (superadmin only)
+ * @route   GET /admin/users
+ * @access  Private/SuperAdmin
+ */
+exports.getAllUsers = async (req, res) => {
+  const {
+    page = 1,
+    limit = 20,
+    search = "",
+    status = "all",
+    role = "all",
+    institutionId = "all",
+  } = req.query;
+
+  const query = { isDeleted: false };
+
+  if (search) {
+    query.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { email: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  if (status !== "all") {
+    query.status = status;
+  }
+
+  if (role !== "all") {
+    query.role = role;
+  }
+
+  if (institutionId !== "all") {
+    query.institutionId = institutionId;
+  }
+
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const total = await User.countDocuments(query);
+
+  const users = await User.find(query)
+    .select("-password")
+    .populate("institutionId", "name code")
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(parseInt(limit));
+
+  res.status(200).json({
+    success: true,
+    data: {
+      users,
+      pagination: {
+        total,
+        page: parseInt(page),
+        pages: Math.ceil(total / parseInt(limit)),
+        limit: parseInt(limit),
+      },
+    },
+  });
+};
+
+/**
  * @desc    Approve AI suggestion and persist as EmissionFactor
  * @route   POST /admin/suggestions/approve
  * @access  Private/Admin
